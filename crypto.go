@@ -97,10 +97,7 @@ func (p *PrivateKey) Bytes() (out []byte) {
 //
 // See Signature documentation for more info about return signature format.
 func (p *PrivateKey) Sign(messageHash Hash) (out Signature, err error) {
-	compressedSignature, err := ecdsa.SignCompact(p.inner, messageHash, false)
-	if err != nil {
-		return out, fmt.Errorf("ecdsa sign compact: %w", err)
-	}
+	compressedSignature := ecdsa.SignCompact(p.inner, messageHash, false)
 
 	copy(out[:], compressedSignature)
 	return out, nil
@@ -193,7 +190,6 @@ func (s Signature) S() *big.Int {
 // Ethereum augmented recovery ID to protect agaisnt replay attacks is **not**
 // applied here.
 //
-//
 // See https://bitcoin.stackexchange.com/a/38909 for extra details
 func (s Signature) V() byte {
 	return byte(s[0])
@@ -222,7 +218,6 @@ func (s Signature) String() string {
 // InvertedSignature represents a standard Signature but the order of component
 // `V` is inverted, being the last byte of the bytes (where it's the first byte in the
 // standard `btcec` Signature).
-//
 //
 // The InverteSignature is in packed form of 65 bytes and order of the components is
 // R (32 bytes) + S (32 bytes) + V (1 byte).
