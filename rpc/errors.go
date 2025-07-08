@@ -55,6 +55,7 @@ var GETH_DETERMINISTIC_ERRORS = []string{
 	// why `out of gas` is considered deterministic. One thing to remember, from an operator perspective, a minimal amount of `gasCap` is required on the node that
 	// is handling `eth_call`, it must be equal or greater than `gasLimit` we use for the call.
 	"out of gas",
+	"evm error: invalidfeopcode",
 }
 
 const PARITY_BAD_INSTRUCTION_FE = "Bad instruction fe"
