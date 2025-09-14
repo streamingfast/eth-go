@@ -58,6 +58,15 @@ var GETH_DETERMINISTIC_ERRORS = []string{
 	"evm error: invalidfeopcode",
 }
 
+var RETH_DETERMINISTIC_ERRORS = []string{
+	"revert",
+	"invalidjump",
+	"opcodenotfound",
+	"stackoverflow",
+	"outofgas",
+	"invalidfeopcode",
+}
+
 const PARITY_BAD_INSTRUCTION_FE = "Bad instruction fe"
 const PARITY_BAD_INSTRUCTION_FD = "Bad instruction fd"
 const PARITY_BAD_JUMP_PREFIX = "Bad jump"
@@ -83,6 +92,7 @@ const GANACHE_REVERT_MESSAGE = "VM Exception while processing transaction: rever
 func IsDeterministicError(err *ErrResponse) bool {
 	return IsGenericDeterministicError(err) ||
 		IsGethDeterministicError(err) ||
+		IsRethDeterministicError(err) ||
 		IsParityDeterministicError(err) ||
 		IsGanacheDeterministicError(err)
 }
@@ -94,6 +104,16 @@ func IsGenericDeterministicError(err *ErrResponse) bool {
 func IsGethDeterministicError(err *ErrResponse) bool {
 	msg := strings.ToLower(err.Message)
 	for _, e := range GETH_DETERMINISTIC_ERRORS {
+		if strings.Contains(msg, e) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsRethDeterministicError(err *ErrResponse) bool {
+	msg := strings.ToLower(err.Message)
+	for _, e := range RETH_DETERMINISTIC_ERRORS {
 		if strings.Contains(msg, e) {
 			return true
 		}
