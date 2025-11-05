@@ -40,10 +40,11 @@ type Option func(*Client)
 
 // TODO: refactor to use mux rpc
 type Client struct {
-	endpoint   string
-	chainID    *big.Int
-	headers    map[string]string
-	httpClient *http.Client
+	endpoint     string
+	chainID      *big.Int
+	headers      map[string]string
+	httpClient   *http.Client
+	useNumericID bool
 }
 
 func NewClient(endpointURL string, opts ...Option) *Client {
@@ -70,6 +71,12 @@ func WithHttpHeader(key, val string) Option {
 func WithHttpClient(httpClient *http.Client) Option {
 	return func(client *Client) {
 		client.httpClient = httpClient
+	}
+}
+
+func WithNumericID(useNumericID bool) Option {
+	return func(client *Client) {
+		client.useNumericID = useNumericID
 	}
 }
 
@@ -593,7 +600,6 @@ func (c *ETHCall) ToRequest() *RPCRequest {
 
 type ResponseDecoder func([]byte) ([]interface{}, error)
 
-// TODO: if we don't want to batch, here is the place to separate the requests and send them one by one
 func (c *Client) DoRequests(ctx context.Context, reqs []*RPCRequest) ([]*RPCResponse, error) {
 	logger := logging.Logger(ctx, zlog).With(zap.Strings("methods", methodsFromRPCRequests(reqs)))
 
@@ -606,8 +612,7 @@ func (c *Client) DoRequests(ctx context.Context, reqs []*RPCRequest) ([]*RPCResp
 		req.JSONRPC = "2.0"
 	}
 
-	fmt.Println("doing requests")
-	reqsBytes, err := MarshalJSONRPC(&reqs)
+	reqsBytes, err := MarshalJSONRPCWithOpts(&reqs, c.useNumericID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal json_rpc requests: %w", err)
 	}
@@ -642,7 +647,7 @@ func (c *Client) DoRequest(ctx context.Context, method string, params []interfac
 		Method:  method,
 		ID:      1,
 	}
-	reqCnt, err := MarshalJSONRPC(&req)
+	reqCnt, err := MarshalJSONRPCWithOpts(&req, c.useNumericID)
 	if err != nil {
 		return "", fmt.Errorf("unable to marshal json_rpc request: %w", err)
 	}
@@ -651,7 +656,6 @@ func (c *Client) DoRequest(ctx context.Context, method string, params []interfac
 		logger.Debug("json_rpc request", zap.String("request", string(reqCnt)))
 	}
 
-	fmt.Println("doing single request")
 	resp, err := c.doRequest(ctx, logger, reqCnt)
 	if err != nil {
 		return "", err
@@ -670,8 +674,6 @@ func (c *Client) DoRequest(ctx context.Context, method string, params []interfac
 
 func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []byte) ([]byte, error) {
 	body := bytes.NewBuffer(reqsBytes)
-
-	fmt.Println("body", body.String())
 
 	resp, err := c.post(ctx, c.endpoint, body)
 	if err != nil {

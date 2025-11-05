@@ -167,9 +167,13 @@ import (
 // handle them. Passing cyclic structures to Marshal will result in
 // an error.
 func MarshalJSONRPC(v interface{}) ([]byte, error) {
+	return MarshalJSONRPCWithOpts(v, false)
+}
+
+func MarshalJSONRPCWithOpts(v interface{}, useNumericID bool) ([]byte, error) {
 	e := newEncodeState()
 
-	err := e.marshal(v, encOpts{escapeHTML: false})
+	err := e.marshal(v, encOpts{escapeHTML: false, useNumericID: useNumericID})
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +385,8 @@ type encOpts struct {
 	quoted bool
 	// escapeHTML causes '<', '>', and '&' to be escaped in JSON strings.
 	escapeHTML bool
+	// useNumericID causes integer IDs to be encoded as numbers instead of hex strings.
+	useNumericID bool
 }
 
 type encoderFunc func(e *encodeState, v reflect.Value, opts encOpts)
@@ -416,10 +422,8 @@ func typeEncoder(t reflect.Type) encoderFunc {
 		return fi.(encoderFunc)
 	}
 
-	// TODO: figure out if we want to do numeric ID
-
 	// Compute the real encoder and replace the indirect func with it.
-	f = newTypeEncoder(t, true, true)
+	f = newTypeEncoder(t, true, false)
 	wg.Done()
 	encoderCache.Store(t, f)
 	return f
@@ -445,11 +449,11 @@ func newTypeEncoder(t reflect.Type, allowAddr bool, intAsNumeric bool) encoderFu
 		}
 
 		if reflect.PtrTo(t).Implements(marshalerRPCType) {
-			return newCondAddrEncoder(addrMarshalerRPCEncoder, newTypeEncoder(t, false))
+			return newCondAddrEncoder(addrMarshalerRPCEncoder, newTypeEncoder(t, false, intAsNumeric))
 		}
 
 		if reflect.PtrTo(t).Implements(marshalerType) {
-			return newCondAddrEncoder(addrMarshalerEncoder, newTypeEncoder(t, false))
+			return newCondAddrEncoder(addrMarshalerEncoder, newTypeEncoder(t, false, intAsNumeric))
 		}
 	}
 
@@ -891,7 +895,17 @@ FieldLoop:
 			e.WriteString(f.nameNonEsc)
 		}
 		opts.quoted = f.quoted
-		f.encoder(e, fv, opts)
+
+		// Handle id field encoding based on useNumericID flag
+		if f.name == "id" && fv.Kind() == reflect.Int {
+			if opts.useNumericID {
+				intEncoderDecimal(e, fv, opts)
+			} else {
+				intEncoder(e, fv, opts)
+			}
+		} else {
+			f.encoder(e, fv, opts)
+		}
 	}
 	if next == '{' {
 		e.WriteString("{}")
