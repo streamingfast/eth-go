@@ -224,11 +224,10 @@ func (b *BlockRef) MarshalText() (string, error) {
 	}
 
 	if b.hash != nil {
-		return b.hash.Pretty(), nil
+		return fmt.Sprintf("BlockHash: %s", b.hash.Pretty()), nil
 	}
 
-	// Format as hex
-	return fmt.Sprintf("0x%x", b.value), nil
+	return fmt.Sprintf("BlockNumber: %d", b.value), nil
 }
 
 func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
@@ -242,13 +241,17 @@ func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
 
 	if b.hash != nil { // [EIP-1898](https://eips.ethereum.org/EIPS/eip-1898)
 		return MarshalJSONRPC(struct {
-			BlockHash string `json:"blockHash,omitempty"`
+			BlockHash string `json:"blockHash"`
 		}{
 			BlockHash: b.hash.Pretty(),
 		})
 	}
 
-	return MarshalJSONRPC(b.value)
+	return MarshalJSONRPC(struct {
+		BlockNumber uint64 `json:"blockNumber"`
+	}{
+		BlockNumber: b.value,
+	})
 }
 
 func (b *BlockRef) String() string {
