@@ -97,15 +97,53 @@ func (b *BlockRef) BlockHash() (hash eth.Hash, ok bool) {
 	return b.hash, true
 }
 
-type blockHashObject struct {
-	Hash eth.Hash `json:"blockHash"`
+type blockHashOrNumberObject struct {
+	Hash   eth.Hash          `json:"blockHash"`
+	Number *blockNumberOrHex `json:"blockNumber"`
+}
+
+// blockNumberOrHex handles both numeric JSON values and hex strings for EIP-1898
+type blockNumberOrHex uint64
+
+func (b *blockNumberOrHex) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as a number first
+	var num uint64
+	if err := json.Unmarshal(data, &num); err == nil {
+		*b = blockNumberOrHex(num)
+		return nil
+	}
+
+	// Fall back to hex string
+	var hexStr string
+	if err := json.Unmarshal(data, &hexStr); err != nil {
+		return fmt.Errorf("expected number or hex string: %w", err)
+	}
+
+	var value eth.Uint64
+	if err := value.UnmarshalText([]byte(hexStr)); err != nil {
+		return err
+	}
+
+	*b = blockNumberOrHex(value)
+	return nil
 }
 
 func (b *BlockRef) UnmarshalJSON(text []byte) error {
-	if gjson.ParseBytes(text).IsObject() {
+	result := gjson.ParseBytes(text)
+
+	if result.IsObject() {
 		return b.UnmarshalText(text)
 	}
 
+	// Handle raw numeric JSON values
+	if result.Type == gjson.Number {
+		b.tag = ""
+		b.hash = nil
+		b.value = uint64(result.Uint())
+		return nil
+	}
+
+	// Handle string values
 	var s string
 	if err := json.Unmarshal(text, &s); err != nil {
 		return fmt.Errorf("unmarshal string: %w", err)
@@ -117,14 +155,21 @@ func (b *BlockRef) UnmarshalJSON(text []byte) error {
 func (b *BlockRef) UnmarshalText(text []byte) error {
 	if gjson.ParseBytes(text).IsObject() {
 		// Is it right to do JSON unmarshaling in the text version? Maybe we should use a pure `UnmarshalJSOM`.
-		var obj blockHashObject
+		var obj blockHashOrNumberObject
 		if err := json.Unmarshal(text, &obj); err != nil {
-			return fmt.Errorf("invalid hash: %w", err)
+			return fmt.Errorf("invalid hash or number: %w", err)
 		}
 
 		b.tag = ""
 		b.value = 0
 		b.hash = obj.Hash
+
+		// Handle blockNumber field if present (EIP-1898)
+		if obj.Number != nil {
+			b.value = uint64(*obj.Number)
+			b.hash = nil
+		}
+
 		return nil
 	}
 
@@ -169,6 +214,22 @@ func (b *BlockRef) UnmarshalText(text []byte) error {
 	return nil
 }
 
+func (b *BlockRef) MarshalText() (string, error) {
+	if b == nil {
+		return "latest", nil
+	}
+
+	if b.tag != "" {
+		return b.tag, nil
+	}
+
+	if b.hash != nil {
+		return fmt.Sprintf("BlockHash: %s", b.hash.Pretty()), nil
+	}
+
+	return fmt.Sprintf("BlockNumber: %d", b.value), nil
+}
+
 func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
 	if b == nil {
 		return []byte("latest"), nil
@@ -180,13 +241,17 @@ func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
 
 	if b.hash != nil { // [EIP-1898](https://eips.ethereum.org/EIPS/eip-1898)
 		return MarshalJSONRPC(struct {
-			BlockHash string `json:"blockHash,omitempty"`
+			BlockHash string `json:"blockHash"`
 		}{
 			BlockHash: b.hash.Pretty(),
 		})
 	}
 
-	return MarshalJSONRPC(b.value)
+	return MarshalJSONRPC(struct {
+		BlockNumber uint64 `json:"blockNumber"`
+	}{
+		BlockNumber: b.value,
+	})
 }
 
 func (b *BlockRef) String() string {

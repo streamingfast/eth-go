@@ -98,6 +98,17 @@ func TestBlockRef_UnmarshalJSON(t *testing.T) {
 
 		{"block hash empty", args{`{"blockHash":"0x"}`}, BlockHash(""), require.NoError},
 		{"block hash full", args{`{"blockHash":"0xf092d0fffe12ec3978b369b861121b62b37a4c1176beda7116f24ce1b7a4937e"}`}, BlockHash("0xf092d0fffe12ec3978b369b861121b62b37a4c1176beda7116f24ce1b7a4937e"), require.NoError},
+
+		{"block number object hex string", args{`{"blockNumber":"0x808f609"}`}, BlockNumber(134805001), require.NoError},
+		{"block number object hex string uppercase", args{`{"blockNumber":"0x808F609"}`}, BlockNumber(134805001), require.NoError},
+		{"block number object hex string zero", args{`{"blockNumber":"0x0"}`}, BlockNumber(0), require.NoError},
+
+		{"block number object numeric", args{`{"blockNumber":134805001}`}, BlockNumber(134805001), require.NoError},
+		{"block number object numeric zero", args{`{"blockNumber":0}`}, BlockNumber(0), require.NoError},
+		{"block number object numeric large", args{`{"blockNumber":5175791617}`}, BlockNumber(5175791617), require.NoError},
+
+		{"block number raw numeric", args{`134805001`}, BlockNumber(134805001), require.NoError},
+		{"block number raw numeric zero", args{`0`}, BlockNumber(0), require.NoError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -152,6 +163,14 @@ func TestBlockRef_UnmarshalText(t *testing.T) {
 
 		{"block hash empty", args{`{"blockHash":"0x"}`}, BlockHash(""), require.NoError},
 		{"block hash full", args{`{"blockHash":"0xf092d0fffe12ec3978b369b861121b62b37a4c1176beda7116f24ce1b7a4937e"}`}, BlockHash("0xf092d0fffe12ec3978b369b861121b62b37a4c1176beda7116f24ce1b7a4937e"), require.NoError},
+
+		{"block number object hex string", args{`{"blockNumber":"0x808f609"}`}, BlockNumber(134805001), require.NoError},
+		{"block number object hex string uppercase", args{`{"blockNumber":"0x808F609"}`}, BlockNumber(134805001), require.NoError},
+		{"block number object hex string zero", args{`{"blockNumber":"0x0"}`}, BlockNumber(0), require.NoError},
+
+		{"block number object numeric", args{`{"blockNumber":134805001}`}, BlockNumber(134805001), require.NoError},
+		{"block number object numeric zero", args{`{"blockNumber":0}`}, BlockNumber(0), require.NoError},
+		{"block number object numeric large", args{`{"blockNumber":5175791617}`}, BlockNumber(5175791617), require.NoError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
