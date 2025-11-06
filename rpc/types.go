@@ -98,7 +98,33 @@ func (b *BlockRef) BlockHash() (hash eth.Hash, ok bool) {
 }
 
 type blockHashObject struct {
-	Hash eth.Hash `json:"blockHash"`
+	Hash   eth.Hash           `json:"blockHash"`
+	Number *blockNumberOrHex `json:"blockNumber"`
+}
+
+type blockNumberOrHex uint64
+
+func (b *blockNumberOrHex) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as a number first
+	var num uint64
+	if err := json.Unmarshal(data, &num); err == nil {
+		*b = blockNumberOrHex(num)
+		return nil
+	}
+
+	// Fall back to hex string
+	var hexStr string
+	if err := json.Unmarshal(data, &hexStr); err != nil {
+		return fmt.Errorf("expected number or hex string: %w", err)
+	}
+
+	var value eth.Uint64
+	if err := value.UnmarshalText([]byte(hexStr)); err != nil {
+		return err
+	}
+
+	*b = blockNumberOrHex(value)
+	return nil
 }
 
 func (b *BlockRef) UnmarshalJSON(text []byte) error {
@@ -125,6 +151,12 @@ func (b *BlockRef) UnmarshalText(text []byte) error {
 		b.tag = ""
 		b.value = 0
 		b.hash = obj.Hash
+
+		if obj.Number != nil {
+			b.value = uint64(*obj.Number)
+			b.hash = nil
+		}
+
 		return nil
 	}
 
