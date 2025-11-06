@@ -482,8 +482,8 @@ type RPCRequest struct {
 	Method  string        `json:"method"`
 	decoder ResponseDecoder
 
-	JSONRPC string `json:"jsonrpc"`
-	ID      int    `json:"id"` // TODO: this is what we want as numeric
+	JSONRPC string  `json:"jsonrpc"`
+	ID      eth.Int `json:"id"`
 }
 
 type RPCResponse struct {
@@ -608,7 +608,7 @@ func (c *Client) DoRequests(ctx context.Context, reqs []*RPCRequest) ([]*RPCResp
 	// we need IDs to be sorted
 	for _, req := range reqs {
 		lastID++
-		req.ID = lastID
+		req.ID = eth.Int(lastID)
 		req.JSONRPC = "2.0"
 	}
 
@@ -645,7 +645,7 @@ func (c *Client) DoRequest(ctx context.Context, method string, params []interfac
 		Params:  params,
 		JSONRPC: "2.0",
 		Method:  method,
-		ID:      1,
+		ID:      eth.Int(1),
 	}
 	reqCnt, err := MarshalJSONRPCWithOpts(&req, c.useNumericID)
 	if err != nil {
@@ -778,8 +778,15 @@ func methodsFromRPCRequests(requests []*RPCRequest) (out []string) {
 }
 
 func parseResponseID(result gjson.Result) (int, string, error) {
-	idValue := result.Get("id").String()
+	idResult := result.Get("id")
+	idValue := idResult.String()
 
+	// Handle numeric ids directly
+	if idResult.Type == gjson.Number {
+		return int(idResult.Int()), idValue, nil
+	}
+
+	// Handle hex string ids
 	var id eth.Uint64
 	if err := id.UnmarshalText([]byte(idValue)); err != nil {
 		return 0, idValue, err
