@@ -89,31 +89,31 @@ import (
 //
 // Examples of struct field tags and their meanings:
 //
-//   // Field appears in JSON as key "myName".
-//   Field int `json:"myName"`
+//	// Field appears in JSON as key "myName".
+//	Field int `json:"myName"`
 //
-//   // Field appears in JSON as key "myName" and
-//   // the field is omitted from the object if its value is empty,
-//   // as defined above.
-//   Field int `json:"myName,omitempty"`
+//	// Field appears in JSON as key "myName" and
+//	// the field is omitted from the object if its value is empty,
+//	// as defined above.
+//	Field int `json:"myName,omitempty"`
 //
-//   // Field appears in JSON as key "Field" (the default), but
-//   // the field is skipped if empty.
-//   // Note the leading comma.
-//   Field int `json:",omitempty"`
+//	// Field appears in JSON as key "Field" (the default), but
+//	// the field is skipped if empty.
+//	// Note the leading comma.
+//	Field int `json:",omitempty"`
 //
-//   // Field is ignored by this package.
-//   Field int `json:"-"`
+//	// Field is ignored by this package.
+//	Field int `json:"-"`
 //
-//   // Field appears in JSON as key "-".
-//   Field int `json:"-,"`
+//	// Field appears in JSON as key "-".
+//	Field int `json:"-,"`
 //
 // The "string" option signals that a field is stored as JSON inside a
 // JSON-encoded string. It applies only to fields of string, floating point,
 // integer, or boolean types. This extra level of encoding is sometimes used
 // when communicating with JavaScript programs:
 //
-//    Int64String int64 `json:",string"`
+//	Int64String int64 `json:",string"`
 //
 // The key name will be used if it's a non-empty string consisting of
 // only Unicode letters, digits, and ASCII punctuation except quotation
@@ -166,11 +166,14 @@ import (
 // JSON cannot represent cyclic data structures and Marshal does not
 // handle them. Passing cyclic structures to Marshal will result in
 // an error.
-//
 func MarshalJSONRPC(v interface{}) ([]byte, error) {
+	return MarshalJSONRPCWithOpts(v, false)
+}
+
+func MarshalJSONRPCWithOpts(v interface{}, useNumericID bool) ([]byte, error) {
 	e := newEncodeState()
 
-	err := e.marshal(v, encOpts{escapeHTML: false})
+	err := e.marshal(v, encOpts{escapeHTML: false, useNumericID: useNumericID})
 	if err != nil {
 		return nil, err
 	}
@@ -382,6 +385,8 @@ type encOpts struct {
 	quoted bool
 	// escapeHTML causes '<', '>', and '&' to be escaped in JSON strings.
 	escapeHTML bool
+	// useNumericID causes integer IDs to be encoded as numbers instead of hex strings.
+	useNumericID bool
 }
 
 type encoderFunc func(e *encodeState, v reflect.Value, opts encOpts)
@@ -418,7 +423,7 @@ func typeEncoder(t reflect.Type) encoderFunc {
 	}
 
 	// Compute the real encoder and replace the indirect func with it.
-	f = newTypeEncoder(t, true)
+	f = newTypeEncoder(t, true, false)
 	wg.Done()
 	encoderCache.Store(t, f)
 	return f
@@ -433,7 +438,7 @@ var (
 
 // newTypeEncoder constructs an encoderFunc for a type.
 // The returned encoder only checks CanAddr when allowAddr is true.
-func newTypeEncoder(t reflect.Type, allowAddr bool) encoderFunc {
+func newTypeEncoder(t reflect.Type, allowAddr bool, intAsNumeric bool) encoderFunc {
 	// If we have a non-pointer value whose type implements
 	// Marshaler with a value receiver, then we're better off taking
 	// the address of the value - otherwise we end up with an
@@ -444,11 +449,11 @@ func newTypeEncoder(t reflect.Type, allowAddr bool) encoderFunc {
 		}
 
 		if reflect.PtrTo(t).Implements(marshalerRPCType) {
-			return newCondAddrEncoder(addrMarshalerRPCEncoder, newTypeEncoder(t, false))
+			return newCondAddrEncoder(addrMarshalerRPCEncoder, newTypeEncoder(t, false, intAsNumeric))
 		}
 
 		if reflect.PtrTo(t).Implements(marshalerType) {
-			return newCondAddrEncoder(addrMarshalerEncoder, newTypeEncoder(t, false))
+			return newCondAddrEncoder(addrMarshalerEncoder, newTypeEncoder(t, false, intAsNumeric))
 		}
 	}
 
@@ -465,7 +470,7 @@ func newTypeEncoder(t reflect.Type, allowAddr bool) encoderFunc {
 	}
 
 	if t.Kind() != reflect.Ptr && allowAddr && reflect.PtrTo(t).Implements(textMarshalerType) {
-		return newCondAddrEncoder(addrTextMarshalerEncoder, newTypeEncoder(t, false))
+		return newCondAddrEncoder(addrTextMarshalerEncoder, newTypeEncoder(t, false, intAsNumeric))
 	}
 	if t.Implements(textMarshalerType) {
 		return textMarshalerEncoder
@@ -475,8 +480,14 @@ func newTypeEncoder(t reflect.Type, allowAddr bool) encoderFunc {
 	case reflect.Bool:
 		return boolEncoder
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if intAsNumeric {
+			return intEncoderDecimal
+		}
 		return intEncoder
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if intAsNumeric {
+			return uintEncoderDecimal
+		}
 		return uintEncoder
 	case reflect.Float32:
 		return float32Encoder
@@ -635,6 +646,15 @@ func intEncoder(e *encodeState, v reflect.Value, _ encOpts) {
 		e.Write(b)
 	}
 	e.WriteByte('"')
+}
+
+func intEncoderDecimal(e *encodeState, v reflect.Value, _ encOpts) {
+	b := strconv.AppendInt(e.scratch[:0], v.Int(), 10)
+	e.Write(b)
+}
+func uintEncoderDecimal(e *encodeState, v reflect.Value, _ encOpts) {
+	b := strconv.AppendUint(e.scratch[:0], v.Uint(), 10)
+	e.Write(b)
 }
 
 var prefixZeroCharacter = []byte{'0'}
@@ -875,7 +895,17 @@ FieldLoop:
 			e.WriteString(f.nameNonEsc)
 		}
 		opts.quoted = f.quoted
-		f.encoder(e, fv, opts)
+
+		// Handle id field encoding based on useNumericID flag
+		if f.name == "id" && fv.Kind() == reflect.Int {
+			if opts.useNumericID {
+				intEncoderDecimal(e, fv, opts)
+			} else {
+				intEncoder(e, fv, opts)
+			}
+		} else {
+			f.encoder(e, fv, opts)
+		}
 	}
 	if next == '{' {
 		e.WriteString("{}")
@@ -1798,8 +1828,9 @@ const (
 // 4) simpleLetterEqualFold, no specials, no non-letters.
 //
 // The letters S and K are special because they map to 3 runes, not just 2:
-//  * S maps to s and to U+017F 'ſ' Latin small letter long s
-//  * k maps to K and to U+212A 'K' Kelvin sign
+//   - S maps to s and to U+017F 'ſ' Latin small letter long s
+//   - k maps to K and to U+212A 'K' Kelvin sign
+//
 // See https://play.golang.org/p/tTxjOc0OGo
 //
 // The returned function is specialized for matching against s and
