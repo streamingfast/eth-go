@@ -255,7 +255,7 @@ func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
 	}
 
 	if useShortBlockNumberNotation {
-		return []byte(fmt.Sprintf("0x%x", b.value)), nil
+		return fmt.Appendf(nil, "\"0x%x\"", b.value), nil
 	}
 
 	return MarshalJSONRPC(struct {
