@@ -3,6 +3,7 @@ package rpc
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -230,6 +231,12 @@ func (b *BlockRef) MarshalText() (string, error) {
 	return fmt.Sprintf("BlockNumber: %d", b.value), nil
 }
 
+var useShortBlockNumberNotation bool
+
+func init() {
+	useShortBlockNumberNotation = os.Getenv("ETH_RPC_SHORT_BLOCK_NUMBER_NOTATION") == "true"
+}
+
 func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
 	if b == nil {
 		return []byte("latest"), nil
@@ -245,6 +252,10 @@ func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
 		}{
 			BlockHash: b.hash.Pretty(),
 		})
+	}
+
+	if useShortBlockNumberNotation {
+		return []byte(fmt.Sprintf("0x%x", b.value)), nil
 	}
 
 	return MarshalJSONRPC(struct {
