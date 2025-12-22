@@ -431,6 +431,7 @@ type Block struct {
 	ParentBeaconBlockRoot *eth.Hash    `json:"parentBeaconBlockRoot,omitempty"` // EIP-4844
 	WithdrawalsHash       *eth.Hash    `json:"withdrawalsRoot,omitempty"`       // EIP-4895
 	Withdrawals           []Withdrawal `json:"withdrawals,omitempty"`           // EIP-4895
+	RequestsHash          *eth.Hash    `json:"requestsHash,omitempty"`          // EIP-7685
 }
 
 type Withdrawal struct {
