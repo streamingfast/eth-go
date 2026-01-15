@@ -36,12 +36,49 @@ func ParseABIFromBytes(content []byte) (*ABI, error) {
 	return parseABIFromReader(bytes.NewBuffer(content))
 }
 
-func parseABIFromReader(reader io.Reader) (*ABI, error) {
-	decoder := json.NewDecoder(reader)
+func parseDeclarations(content []byte) ([]*declaration, error) {
+	// Find first non-whitespace character to determine format
+	content = bytes.TrimSpace(content)
+	if len(content) == 0 {
+		return nil, fmt.Errorf("empty abi content")
+	}
 
-	var declarations []*declaration
-	if err := decoder.Decode(&declarations); err != nil {
-		return nil, fmt.Errorf("read abi: %w", err)
+	switch content[0] {
+	case '[':
+		// Direct array format: [...]
+		var declarations []*declaration
+		if err := json.Unmarshal(content, &declarations); err != nil {
+			return nil, fmt.Errorf("read abi array: %w", err)
+		}
+		return declarations, nil
+
+	case '{':
+		// Object format: { "abi": [...], ... }
+		var wrapper struct {
+			ABI []*declaration `json:"abi"`
+		}
+		if err := json.Unmarshal(content, &wrapper); err != nil {
+			return nil, fmt.Errorf("read abi object: %w", err)
+		}
+		if wrapper.ABI == nil {
+			return nil, fmt.Errorf("abi object missing 'abi' key")
+		}
+		return wrapper.ABI, nil
+
+	default:
+		return nil, fmt.Errorf("invalid abi format: expected '[' or '{', got %q", content[0])
+	}
+}
+
+func parseABIFromReader(reader io.Reader) (*ABI, error) {
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("read content: %w", err)
+	}
+
+	declarations, err := parseDeclarations(content)
+	if err != nil {
+		return nil, err
 	}
 
 	abi := &ABI{

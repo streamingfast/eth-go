@@ -60,6 +60,31 @@ func TestABIContract_Parse(t *testing.T) {
 		},
 
 		{
+			"object format with abi key",
+			&ABI{
+				FunctionsMap:       map[string][]*MethodDef{},
+				FunctionsByNameMap: map[string][]*MethodDef{},
+				LogEventsMap: map[string][]*LogEventDef{
+					string(b(t, "b14a725aeeb25d591b81b16b4c5b25403dd8867bdd1876fa787867f566206be1")): {{
+						Name: "PairCreated",
+						Parameters: []*LogParameter{
+							{Name: "token0", TypeName: "address", Type: AddressType{}, Indexed: true},
+						},
+					}},
+				},
+				LogEventsByNameMap: map[string][]*LogEventDef{
+					"PairCreated": {{
+						Name: "PairCreated",
+						Parameters: []*LogParameter{
+							{Name: "token0", TypeName: "address", Type: AddressType{}, Indexed: true},
+						},
+					}},
+				},
+			},
+			nil,
+		},
+
+		{
 			"struct tuple alone",
 			&ABI{
 				FunctionsMap: map[string][]*MethodDef{

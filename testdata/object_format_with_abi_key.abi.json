@@ -1,0 +1,18 @@
+{
+  "contractName": "TestContract",
+  "abi": [
+    {
+      "name": "PairCreated",
+      "type": "event",
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token0",
+          "type": "address"
+        }
+      ]
+    }
+  ],
+  "bytecode": "0x..."
+}

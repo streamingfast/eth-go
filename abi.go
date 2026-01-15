@@ -19,11 +19,6 @@ import "go.uber.org/zap"
 // ABI is our custom internal definition of a contract's ABI that bridges the information
 // between the two ABI like formats for contract's, i.e. `.abi` file and AST file as output
 // by `solc` compiler.
-//
-// FIXME: Our internal structure is wrong because multiple functions and multiple events
-// can exist under the same name. This is problematic right now because we use a one level
-// mapping and only the "last seen" event wins. This will require a refactor and will trickle
-// down in a few places.
 type ABI struct {
 	LogEventsMap    map[string][]*LogEventDef
 	FunctionsMap    map[string][]*MethodDef
