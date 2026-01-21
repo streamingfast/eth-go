@@ -88,7 +88,7 @@ func (d *Decoder) readParameters(parameters []*MethodParameter, methodOffset uin
 	for i, param := range parameters {
 		var currentOffset uint64
 
-		isOffset := isDynamicType(param.TypeName)
+		isOffset := isDynamicType(param.TypeName, param.Components)
 		if isOffset {
 			currentOffset = d.offset
 			offset, err := d.read("uint256")
@@ -107,7 +107,7 @@ func (d *Decoder) readParameters(parameters []*MethodParameter, methodOffset uin
 			d.offset = jumpToOffset
 		}
 
-		value, err := d.Read(param.TypeName)
+		value, err := d.readWithComponents(param.TypeName, param.Components)
 		if err != nil {
 			return nil, fmt.Errorf("read type %q (element #%d) at offset %d: %w", param.TypeName, i, d.offset, err)
 		}
@@ -122,9 +122,17 @@ func (d *Decoder) readParameters(parameters []*MethodParameter, methodOffset uin
 }
 
 func (d *Decoder) Read(typeName string) (interface{}, error) {
+	return d.readWithComponents(typeName, nil)
+}
+
+func (d *Decoder) readWithComponents(typeName string, components []*StructComponent) (interface{}, error) {
 	var isAnArray bool
 	isAnArray, resolvedTypeName := isArray(typeName)
 	if !isAnArray {
+		// Handle tuple type specially since it needs components
+		if resolvedTypeName == "tuple" {
+			return d.readTuple(components)
+		}
 		return d.read(resolvedTypeName)
 	}
 
@@ -134,6 +142,19 @@ func (d *Decoder) Read(typeName string) (interface{}, error) {
 	}
 
 	size := length.(*big.Int).Uint64()
+
+	// Handle tuple arrays
+	if resolvedTypeName == "tuple" {
+		result := make([][]interface{}, size)
+		for i := uint64(0); i < size; i++ {
+			tuple, err := d.readTuple(components)
+			if err != nil {
+				return nil, fmt.Errorf("cannot read tuple from slice %s.%d: %w", typeName, i, err)
+			}
+			result[i] = tuple
+		}
+		return result, nil
+	}
 
 	arr, err := newArray(resolvedTypeName, size)
 	if err != nil {
@@ -148,6 +169,85 @@ func (d *Decoder) Read(typeName string) (interface{}, error) {
 		arr.At(i, out)
 	}
 	return arr, nil
+}
+
+// readTuple reads a tuple (struct) from the buffer. Tuples with dynamic components
+// use offset-based encoding where the offsets are relative to the tuple's start position.
+func (d *Decoder) readTuple(components []*StructComponent) ([]interface{}, error) {
+	if len(components) == 0 {
+		return nil, NewErrDecoding("cannot read tuple without components definition")
+	}
+
+	// Check if any component is dynamic
+	hasDynamic := false
+	for _, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			hasDynamic = true
+			break
+		}
+	}
+
+	result := make([]interface{}, len(components))
+
+	// If no dynamic components, just read inline
+	if !hasDynamic {
+		for i, component := range components {
+			value, err := d.readWithComponents(component.TypeName, component.Components)
+			if err != nil {
+				return nil, fmt.Errorf("cannot read tuple component %q (index %d): %w", component.Name, i, err)
+			}
+			result[i] = value
+		}
+		return result, nil
+	}
+
+	// For tuples with dynamic components, we need to handle offsets
+	// Save the tuple start offset to calculate relative offsets
+	tupleStartOffset := d.offset
+
+	// First pass: read static components inline and record offsets for dynamic components
+	type dynamicComponent struct {
+		index          int
+		component      *StructComponent
+		relativeOffset uint64
+	}
+	dynamicComponents := []dynamicComponent{}
+
+	for i, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			// Read the offset (relative to tuple start)
+			offset, err := d.read("uint256")
+			if err != nil {
+				return nil, fmt.Errorf("cannot read offset for tuple component %q (index %d): %w", component.Name, i, err)
+			}
+			dynamicComponents = append(dynamicComponents, dynamicComponent{
+				index:          i,
+				component:      component,
+				relativeOffset: offset.(*big.Int).Uint64(),
+			})
+		} else {
+			// Read static component inline
+			value, err := d.readWithComponents(component.TypeName, component.Components)
+			if err != nil {
+				return nil, fmt.Errorf("cannot read tuple component %q (index %d): %w", component.Name, i, err)
+			}
+			result[i] = value
+		}
+	}
+
+	// Second pass: read dynamic components at their offsets
+	for _, dc := range dynamicComponents {
+		absoluteOffset := tupleStartOffset + dc.relativeOffset
+		d.offset = absoluteOffset
+
+		value, err := d.readWithComponents(dc.component.TypeName, dc.component.Components)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read dynamic tuple component %q (index %d): %w", dc.component.Name, dc.index, err)
+		}
+		result[dc.index] = value
+	}
+
+	return result, nil
 }
 
 func (d *Decoder) read(typeName string) (out interface{}, err error) {

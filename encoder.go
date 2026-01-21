@@ -93,7 +93,7 @@ func (e *Encoder) writeParameters(methodSelectorOffset int, parameters []*Method
 
 	slicesToInsert := []arrayToInsert{}
 	for idx, param := range parameters {
-		if isDynamicType(param.TypeName) {
+		if isDynamicType(param.TypeName, param.Components) {
 			slicesToInsert = append(slicesToInsert, arrayToInsert{
 				buffOffset: uint64(len(e.buffer)),
 				typeName:   param.TypeName,
@@ -353,9 +353,71 @@ func (e *Encoder) writeTupleFromSlice(structName string, components []*StructCom
 		return fmt.Errorf(`input "[]interface{}" value has %d elements, but struct %q has %d fields`, len(in), structName, len(components))
 	}
 
-	for i, fieldIn := range in {
-		if err := e.writeComponent(structName, components[i], fieldIn); err != nil {
-			return err
+	// Check if any component is dynamic - if so, we need offset-based encoding
+	hasDynamic := false
+	for _, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			hasDynamic = true
+			break
+		}
+	}
+
+	// If no dynamic components, just write inline
+	if !hasDynamic {
+		for i, fieldIn := range in {
+			if err := e.writeComponent(structName, components[i], fieldIn); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// For tuples with dynamic components, use offset-based encoding
+	type dynamicToInsert struct {
+		buffOffset uint64
+		component  *StructComponent
+		value      interface{}
+	}
+
+	dynamicItems := []dynamicToInsert{}
+	tupleStartOffset := uint64(len(e.buffer))
+
+	for i, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			// Write placeholder offset
+			dynamicItems = append(dynamicItems, dynamicToInsert{
+				buffOffset: uint64(len(e.buffer)),
+				component:  component,
+				value:      in[i],
+			})
+
+			if err := e.write("uint64", nil, uint64(0)); err != nil {
+				return fmt.Errorf("unable to write dynamic component placeholder: %w", err)
+			}
+		} else {
+			// Write static component inline
+			if err := e.writeComponent(structName, component, in[i]); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Now write the dynamic data and fill in offsets
+	for _, item := range dynamicItems {
+		// Calculate offset relative to tuple start
+		dataOffset := uint64(len(e.buffer)) - tupleStartOffset
+		offsetData, err := e.encodeUint(dataOffset, 64)
+		if err != nil {
+			return fmt.Errorf("unable to encode dynamic component offset: %w", err)
+		}
+
+		if err := e.override(item.buffOffset, offsetData); err != nil {
+			return fmt.Errorf("unable to insert dynamic component offset in buffer: %w", err)
+		}
+
+		// Write the actual dynamic data
+		if err := e.write(item.component.TypeName, item.component.Components, item.value); err != nil {
+			return fmt.Errorf("unable to write dynamic component %q: %w", item.component.Name, err)
 		}
 	}
 
@@ -367,14 +429,81 @@ func (e *Encoder) writeTupleFromMap(structName string, components []*StructCompo
 		return fmt.Errorf(`input "map[string]interface{}" value has %d elements, but struct %q has %d fields`, len(in), structName, len(components))
 	}
 
+	// Check if any component is dynamic - if so, we need offset-based encoding
+	hasDynamic := false
 	for _, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			hasDynamic = true
+			break
+		}
+	}
+
+	// Collect all values first to check they exist
+	values := make([]interface{}, len(components))
+	for i, component := range components {
 		fieldIn, found := in[component.Name]
 		if !found {
 			return fmt.Errorf(`struct %q has a field %q but it was not found in input "map[string]interface{}" (keys %q)`, structName, component.Name, strings.Join(mapStringInterfaceKeys(in), ", "))
 		}
+		values[i] = fieldIn
+	}
 
-		if err := e.writeComponent(structName, component, fieldIn); err != nil {
-			return err
+	// If no dynamic components, just write inline
+	if !hasDynamic {
+		for i, component := range components {
+			if err := e.writeComponent(structName, component, values[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// For tuples with dynamic components, use offset-based encoding
+	type dynamicToInsert struct {
+		buffOffset uint64
+		component  *StructComponent
+		value      interface{}
+	}
+
+	dynamicItems := []dynamicToInsert{}
+	tupleStartOffset := uint64(len(e.buffer))
+
+	for i, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			// Write placeholder offset
+			dynamicItems = append(dynamicItems, dynamicToInsert{
+				buffOffset: uint64(len(e.buffer)),
+				component:  component,
+				value:      values[i],
+			})
+
+			if err := e.write("uint64", nil, uint64(0)); err != nil {
+				return fmt.Errorf("unable to write dynamic component placeholder: %w", err)
+			}
+		} else {
+			// Write static component inline
+			if err := e.writeComponent(structName, component, values[i]); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Now write the dynamic data and fill in offsets
+	for _, item := range dynamicItems {
+		// Calculate offset relative to tuple start
+		dataOffset := uint64(len(e.buffer)) - tupleStartOffset
+		offsetData, err := e.encodeUint(dataOffset, 64)
+		if err != nil {
+			return fmt.Errorf("unable to encode dynamic component offset: %w", err)
+		}
+
+		if err := e.override(item.buffOffset, offsetData); err != nil {
+			return fmt.Errorf("unable to insert dynamic component offset in buffer: %w", err)
+		}
+
+		// Write the actual dynamic data
+		if err := e.write(item.component.TypeName, item.component.Components, item.value); err != nil {
+			return fmt.Errorf("unable to write dynamic component %q: %w", item.component.Name, err)
 		}
 	}
 
@@ -387,25 +516,94 @@ func (e *Encoder) writeTupleFromStruct(structName string, components []*StructCo
 		return fmt.Errorf(`input %q value has only %d fields, but struct %q has %d fields`, in.Type().String(), fieldCount, structName, len(components))
 	}
 
-	writeCount := 0
+	// Collect all field values first
+	values := make([]interface{}, 0, len(components))
 	for i := 0; i < fieldCount; i++ {
 		field := in.Field(i)
 		if !field.CanInterface() {
 			if tracer.Enabled() {
-				zlog.Debug("skipping struct field", zap.String("field", field.Type().Field(i).Name))
-				continue
+				zlog.Debug("skipping struct field", zap.String("field", in.Type().Field(i).Name))
 			}
+			continue
 		}
 
-		if writeCount >= len(components) {
+		if len(values) >= len(components) {
 			return fmt.Errorf(`input %q value with %d fields has more field to write than struct %q which has %d fields`, in.Type().String(), fieldCount, structName, len(components))
 		}
 
-		if err := e.writeComponent(structName, components[i], field.Interface()); err != nil {
-			return err
+		values = append(values, field.Interface())
+	}
+
+	if len(values) != len(components) {
+		return fmt.Errorf(`input %q value has %d exportable fields, but struct %q has %d fields`, in.Type().String(), len(values), structName, len(components))
+	}
+
+	// Check if any component is dynamic - if so, we need offset-based encoding
+	hasDynamic := false
+	for _, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			hasDynamic = true
+			break
+		}
+	}
+
+	// If no dynamic components, just write inline
+	if !hasDynamic {
+		for i, component := range components {
+			if err := e.writeComponent(structName, component, values[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// For tuples with dynamic components, use offset-based encoding
+	type dynamicToInsert struct {
+		buffOffset uint64
+		component  *StructComponent
+		value      interface{}
+	}
+
+	dynamicItems := []dynamicToInsert{}
+	tupleStartOffset := uint64(len(e.buffer))
+
+	for i, component := range components {
+		if isDynamicType(component.TypeName, component.Components) {
+			// Write placeholder offset
+			dynamicItems = append(dynamicItems, dynamicToInsert{
+				buffOffset: uint64(len(e.buffer)),
+				component:  component,
+				value:      values[i],
+			})
+
+			if err := e.write("uint64", nil, uint64(0)); err != nil {
+				return fmt.Errorf("unable to write dynamic component placeholder: %w", err)
+			}
+		} else {
+			// Write static component inline
+			if err := e.writeComponent(structName, component, values[i]); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Now write the dynamic data and fill in offsets
+	for _, item := range dynamicItems {
+		// Calculate offset relative to tuple start
+		dataOffset := uint64(len(e.buffer)) - tupleStartOffset
+		offsetData, err := e.encodeUint(dataOffset, 64)
+		if err != nil {
+			return fmt.Errorf("unable to encode dynamic component offset: %w", err)
 		}
 
-		writeCount++
+		if err := e.override(item.buffOffset, offsetData); err != nil {
+			return fmt.Errorf("unable to insert dynamic component offset in buffer: %w", err)
+		}
+
+		// Write the actual dynamic data
+		if err := e.write(item.component.TypeName, item.component.Components, item.value); err != nil {
+			return fmt.Errorf("unable to write dynamic component %q: %w", item.component.Name, err)
+		}
 	}
 
 	return nil
@@ -416,7 +614,7 @@ func (e *Encoder) writeComponent(structName string, component *StructComponent, 
 		zlog.Debug("about to write struct component", zap.Stringer("component", component), zap.String("input_type", fmt.Sprintf("%T", in)))
 	}
 
-	if err := e.writeElement(component.TypeName, nil, in); err != nil {
+	if err := e.writeElement(component.TypeName, component.Components, in); err != nil {
 		return fmt.Errorf(`unable to write "%s#%s: %w"`, structName, component.Name, err)
 	}
 
@@ -577,14 +775,32 @@ func pad(in []byte) []byte {
 	return d
 }
 
-func isDynamicType(typeName string) bool {
+// isDynamicType returns true if the given type is considered dynamic according to the
+// Solidity ABI specification. A type is dynamic if:
+// - It's `bytes` or `string`
+// - It's a dynamic array (e.g., `uint256[]`)
+// - It's a `tuple` where at least one component is dynamic
+func isDynamicType(typeName string, components []*StructComponent) bool {
 	// First as they are probably the most probable type
 	if typeName == "bytes" || typeName == "string" {
 		return true
 	}
 
-	arr, _ := isArray(typeName)
-	return arr
+	arr, resolvedTypeName := isArray(typeName)
+	if arr {
+		return true
+	}
+
+	// A tuple is dynamic if any of its components is dynamic
+	if resolvedTypeName == "tuple" || typeName == "tuple" {
+		for _, component := range components {
+			if isDynamicType(component.TypeName, component.Components) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func isArray(typeName string) (bool, string) {

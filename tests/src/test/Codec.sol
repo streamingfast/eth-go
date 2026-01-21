@@ -581,6 +581,208 @@ contract CodecTest is Test {
         );
     }
 
+    // ===== Tests for tuples with dynamic components =====
+
+    function testFunTupleWithBytes() public {
+        // TupleWithBytes: (address signer, bytes metadata, uint64 value)
+        // This tuple has a dynamic `bytes` field, so it should use offset-based encoding
+        Codec.TupleWithBytes memory input = Codec.TupleWithBytes(
+            0x1234567890123456789012345678901234567890,
+            hex"deadbeef",
+            42
+        );
+
+        bytes memory actual = abi.encodeWithSignature(
+            "funTupleWithBytes((address,bytes,uint64))",
+            input
+        );
+
+        codec.logBytes(actual);
+
+        // Expected encoding:
+        // - 4 bytes: method selector
+        // - 32 bytes: offset to tuple data (0x20 = 32)
+        // Then the tuple itself:
+        // - 32 bytes: address (inline, padded)
+        // - 32 bytes: offset to bytes data (0x60 = 96, relative to tuple start)
+        // - 32 bytes: uint64 value (inline, padded)
+        // - 32 bytes: bytes length (4)
+        // - 32 bytes: bytes data (0xdeadbeef, padded)
+        require(
+            bytesEquals(
+                actual,
+                hex"1c09b0d7" // method selector for funTupleWithBytes((address,bytes,uint64))
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to tuple
+                hex"0000000000000000000000001234567890123456789012345678901234567890" // address signer
+                hex"0000000000000000000000000000000000000000000000000000000000000060" // offset to bytes
+                hex"000000000000000000000000000000000000000000000000000000000000002a" // uint64 value = 42
+                hex"0000000000000000000000000000000000000000000000000000000000000004" // bytes length = 4
+                hex"deadbeef00000000000000000000000000000000000000000000000000000000" // bytes data
+            ),
+            "Invalid TupleWithBytes encoding"
+        );
+
+        (bool success, ) = address(codec).call(actual);
+        require(success, "call should have succeeded");
+    }
+
+    function testFunTupleWithString() public {
+        // TupleWithString: (uint256 id, string name)
+        Codec.TupleWithString memory input = Codec.TupleWithString(123, "hello");
+
+        bytes memory actual = abi.encodeWithSignature(
+            "funTupleWithString((uint256,string))",
+            input
+        );
+
+        codec.logBytes(actual);
+
+        require(
+            bytesEquals(
+                actual,
+                hex"087481b8" // method selector for funTupleWithString((uint256,string))
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to tuple
+                hex"000000000000000000000000000000000000000000000000000000000000007b" // uint256 id = 123
+                hex"0000000000000000000000000000000000000000000000000000000000000040" // offset to string (64 from tuple start)
+                hex"0000000000000000000000000000000000000000000000000000000000000005" // string length = 5
+                hex"68656c6c6f000000000000000000000000000000000000000000000000000000" // "hello"
+            ),
+            "Invalid TupleWithString encoding"
+        );
+
+        (bool success, ) = address(codec).call(actual);
+        require(success, "call should have succeeded");
+    }
+
+    function testFunTupleWithMultipleDynamic() public {
+        // TupleWithMultipleDynamic: (bytes data1, uint64 value, bytes data2)
+        Codec.TupleWithMultipleDynamic memory input = Codec.TupleWithMultipleDynamic(
+            hex"0102",
+            100,
+            hex"030405"
+        );
+
+        bytes memory actual = abi.encodeWithSignature(
+            "funTupleWithMultipleDynamic((bytes,uint64,bytes))",
+            input
+        );
+
+        codec.logBytes(actual);
+
+        require(
+            bytesEquals(
+                actual,
+                hex"2609836a" // method selector for funTupleWithMultipleDynamic((bytes,uint64,bytes))
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to tuple
+                hex"0000000000000000000000000000000000000000000000000000000000000060" // offset to data1 (96 from tuple start)
+                hex"0000000000000000000000000000000000000000000000000000000000000064" // uint64 value = 100
+                hex"00000000000000000000000000000000000000000000000000000000000000a0" // offset to data2 (160 from tuple start)
+                hex"0000000000000000000000000000000000000000000000000000000000000002" // data1 length = 2
+                hex"0102000000000000000000000000000000000000000000000000000000000000" // data1 = 0x0102
+                hex"0000000000000000000000000000000000000000000000000000000000000003" // data2 length = 3
+                hex"0304050000000000000000000000000000000000000000000000000000000000" // data2 = 0x030405
+            ),
+            "Invalid TupleWithMultipleDynamic encoding"
+        );
+
+        (bool success, ) = address(codec).call(actual);
+        require(success, "call should have succeeded");
+    }
+
+    function testEmitEventUTupleWithBytes() public {
+        vm.recordLogs();
+
+        codec.emitEventUTupleWithBytes();
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 1, "Logs length invalid");
+
+        assertEq(logs[0].topics.length, 1);
+        assertEq(
+            logs[0].topics[0],
+            keccak256("EventUTupleWithBytes((address,bytes,uint64))")
+        );
+
+        codec.logBytes(logs[0].data);
+
+        // Event data encoding for tuple with dynamic component
+        require(
+            bytesEquals(
+                logs[0].data,
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to tuple
+                hex"000000000000000000000000db0de9288cf0713de91371969efcc9969dd94117" // address
+                hex"0000000000000000000000000000000000000000000000000000000000000060" // offset to bytes
+                hex"000000000000000000000000000000000000000000000000000000000000002a" // uint64 = 42
+                hex"0000000000000000000000000000000000000000000000000000000000000004" // bytes length = 4
+                hex"deadbeef00000000000000000000000000000000000000000000000000000000" // bytes data
+            ),
+            "Invalid EventUTupleWithBytes data encoding"
+        );
+    }
+
+    function testEmitEventUTupleWithString() public {
+        vm.recordLogs();
+
+        codec.emitEventUTupleWithString();
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 1, "Logs length invalid");
+
+        assertEq(logs[0].topics.length, 1);
+        assertEq(
+            logs[0].topics[0],
+            keccak256("EventUTupleWithString((uint256,string))")
+        );
+
+        codec.logBytes(logs[0].data);
+
+        require(
+            bytesEquals(
+                logs[0].data,
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to tuple
+                hex"000000000000000000000000000000000000000000000000000000000000007b" // uint256 id = 123
+                hex"0000000000000000000000000000000000000000000000000000000000000040" // offset to string
+                hex"0000000000000000000000000000000000000000000000000000000000000005" // string length = 5
+                hex"68656c6c6f000000000000000000000000000000000000000000000000000000" // "hello"
+            ),
+            "Invalid EventUTupleWithString data encoding"
+        );
+    }
+
+    function testEmitEventUTupleWithMultipleDynamic() public {
+        vm.recordLogs();
+
+        codec.emitEventUTupleWithMultipleDynamic();
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 1, "Logs length invalid");
+
+        assertEq(logs[0].topics.length, 1);
+        assertEq(
+            logs[0].topics[0],
+            keccak256("EventUTupleWithMultipleDynamic((bytes,uint64,bytes))")
+        );
+
+        codec.logBytes(logs[0].data);
+
+        require(
+            bytesEquals(
+                logs[0].data,
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to tuple
+                hex"0000000000000000000000000000000000000000000000000000000000000060" // offset to data1
+                hex"0000000000000000000000000000000000000000000000000000000000000064" // uint64 = 100
+                hex"00000000000000000000000000000000000000000000000000000000000000a0" // offset to data2
+                hex"0000000000000000000000000000000000000000000000000000000000000002" // data1 length = 2
+                hex"0102000000000000000000000000000000000000000000000000000000000000" // data1
+                hex"0000000000000000000000000000000000000000000000000000000000000003" // data2 length = 3
+                hex"0304050000000000000000000000000000000000000000000000000000000000" // data2
+            ),
+            "Invalid EventUTupleWithMultipleDynamic data encoding"
+        );
+    }
+
+    // ===== End of tests for tuples with dynamic components =====
+
     // FIXME: Shared for all tests ..., copied from test/PersonalSigning
     // Compares the 'len' bytes starting at address 'addr' in memory with the 'len'
     // bytes starting at 'addr2'.

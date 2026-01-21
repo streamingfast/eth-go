@@ -448,6 +448,8 @@ type StructComponent struct {
 	Name         string
 	TypeName     string
 	Type         SolidityType
+	// Components holds nested struct components when TypeName is "tuple" or "tuple[]"
+	Components []*StructComponent
 }
 
 func (c *StructComponent) String() string {

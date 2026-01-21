@@ -155,4 +155,95 @@ contract Codec {
     function logBytes(bytes memory data) public pure {
         // Will be recorded automatically by forge, use 'forge test -m <testName> -vvv' to see the results
     }
+
+    // Structs with dynamic components for testing tuple encoding
+
+    // TupleWithBytes: struct with a dynamic `bytes` field
+    struct TupleWithBytes {
+        address signer;
+        bytes metadata;
+        uint64 value;
+    }
+
+    function funTupleWithBytes(TupleWithBytes calldata input) public pure returns (TupleWithBytes memory) {
+        return input;
+    }
+
+    event EventUTupleWithBytes(TupleWithBytes param0);
+
+    function emitEventUTupleWithBytes() public {
+        TupleWithBytes memory tuple = TupleWithBytes(
+            0xdB0De9288CF0713De91371969efCC9969dd94117,
+            hex"deadbeef",
+            42
+        );
+        emit EventUTupleWithBytes(tuple);
+    }
+
+    // TupleWithString: struct with a dynamic `string` field
+    struct TupleWithString {
+        uint256 id;
+        string name;
+    }
+
+    function funTupleWithString(TupleWithString calldata input) public pure returns (TupleWithString memory) {
+        return input;
+    }
+
+    event EventUTupleWithString(TupleWithString param0);
+
+    function emitEventUTupleWithString() public {
+        TupleWithString memory tuple = TupleWithString(123, "hello");
+        emit EventUTupleWithString(tuple);
+    }
+
+    // TupleWithMultipleDynamic: struct with multiple dynamic fields
+    struct TupleWithMultipleDynamic {
+        bytes data1;
+        uint64 value;
+        bytes data2;
+    }
+
+    function funTupleWithMultipleDynamic(TupleWithMultipleDynamic calldata input) public pure returns (TupleWithMultipleDynamic memory) {
+        return input;
+    }
+
+    event EventUTupleWithMultipleDynamic(TupleWithMultipleDynamic param0);
+
+    function emitEventUTupleWithMultipleDynamic() public {
+        TupleWithMultipleDynamic memory tuple = TupleWithMultipleDynamic(
+            hex"0102",
+            100,
+            hex"030405"
+        );
+        emit EventUTupleWithMultipleDynamic(tuple);
+    }
+
+    // TupleWithNestedDynamic: struct with nested struct that has dynamic field
+    struct InnerDynamic {
+        uint256 id;
+        string description;
+    }
+
+    struct TupleWithNestedDynamic {
+        address owner;
+        InnerDynamic inner;
+        uint64 timestamp;
+    }
+
+    function funTupleWithNestedDynamic(TupleWithNestedDynamic calldata input) public pure returns (TupleWithNestedDynamic memory) {
+        return input;
+    }
+
+    event EventUTupleWithNestedDynamic(TupleWithNestedDynamic param0);
+
+    function emitEventUTupleWithNestedDynamic() public {
+        InnerDynamic memory inner = InnerDynamic(456, "nested");
+        TupleWithNestedDynamic memory tuple = TupleWithNestedDynamic(
+            0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa,
+            inner,
+            789
+        );
+        emit EventUTupleWithNestedDynamic(tuple);
+    }
 }

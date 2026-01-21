@@ -327,3 +327,142 @@ func TestDecoder_ReadMethodCall(t *testing.T) {
 		})
 	}
 }
+
+// TestDecoder_ReadTupleWithDynamicComponents tests decoding tuples that contain
+// dynamic types like `bytes` or `string`. Per Solidity ABI spec, such tuples are
+// considered dynamic and use offset-based encoding.
+func TestDecoder_ReadTupleWithDynamicComponents(t *testing.T) {
+	tests := []struct {
+		name        string
+		components  []*StructComponent
+		hexData     string
+		expectValue []interface{}
+	}{
+		{
+			name: "tuple with bytes field",
+			components: []*StructComponent{
+				{Name: "signer", TypeName: "address"},
+				{Name: "metadata", TypeName: "bytes"},
+				{Name: "value", TypeName: "uint64"},
+			},
+			// This is the encoded form of (address, bytes, uint64) where:
+			// - address = 0x1234567890123456789012345678901234567890
+			// - bytes = 0xdeadbeef
+			// - uint64 = 42
+			hexData: "0x" +
+				// address signer (inline)
+				"0000000000000000000000001234567890123456789012345678901234567890" +
+				// offset to bytes = 96 (0x60)
+				"0000000000000000000000000000000000000000000000000000000000000060" +
+				// uint64 value = 42
+				"000000000000000000000000000000000000000000000000000000000000002a" +
+				// bytes length = 4
+				"0000000000000000000000000000000000000000000000000000000000000004" +
+				// bytes data = 0xdeadbeef (padded)
+				"deadbeef00000000000000000000000000000000000000000000000000000000",
+			expectValue: []interface{}{
+				MustNewAddress("1234567890123456789012345678901234567890"),
+				[]byte{0xde, 0xad, 0xbe, 0xef},
+				uint64(42),
+			},
+		},
+		{
+			name: "tuple with string field",
+			components: []*StructComponent{
+				{Name: "id", TypeName: "uint256"},
+				{Name: "name", TypeName: "string"},
+			},
+			hexData: "0x" +
+				// uint256 id = 123
+				"000000000000000000000000000000000000000000000000000000000000007b" +
+				// offset to string = 64 (0x40)
+				"0000000000000000000000000000000000000000000000000000000000000040" +
+				// string length = 5
+				"0000000000000000000000000000000000000000000000000000000000000005" +
+				// string data = "hello" (padded)
+				"68656c6c6f000000000000000000000000000000000000000000000000000000",
+			expectValue: []interface{}{
+				bigString(t, "123"),
+				"hello",
+			},
+		},
+		{
+			name: "tuple with multiple dynamic fields",
+			components: []*StructComponent{
+				{Name: "data1", TypeName: "bytes"},
+				{Name: "value", TypeName: "uint64"},
+				{Name: "data2", TypeName: "bytes"},
+			},
+			hexData: "0x" +
+				// offset to data1 = 96 (0x60)
+				"0000000000000000000000000000000000000000000000000000000000000060" +
+				// uint64 value = 100
+				"0000000000000000000000000000000000000000000000000000000000000064" +
+				// offset to data2 = 160 (0xa0)
+				"00000000000000000000000000000000000000000000000000000000000000a0" +
+				// data1 length = 2
+				"0000000000000000000000000000000000000000000000000000000000000002" +
+				// data1 = 0x0102
+				"0102000000000000000000000000000000000000000000000000000000000000" +
+				// data2 length = 3
+				"0000000000000000000000000000000000000000000000000000000000000003" +
+				// data2 = 0x030405
+				"0304050000000000000000000000000000000000000000000000000000000000",
+			expectValue: []interface{}{
+				[]byte{0x01, 0x02},
+				uint64(100),
+				[]byte{0x03, 0x04, 0x05},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dec, err := NewDecoderFromString(test.hexData)
+			require.NoError(t, err)
+
+			result, err := dec.readTuple(test.components)
+			require.NoError(t, err)
+
+			assert.Equal(t, len(test.expectValue), len(result))
+			for i, expected := range test.expectValue {
+				assert.Equal(t, expected, result[i], "mismatch at index %d", i)
+			}
+		})
+	}
+}
+
+// TestEncoderDecoderRoundTrip_TupleWithDynamicComponents tests that encoding and
+// then decoding a tuple with dynamic components produces the original values.
+func TestEncoderDecoderRoundTrip_TupleWithDynamicComponents(t *testing.T) {
+	components := []*StructComponent{
+		{Name: "id", TypeName: "uint256"},
+		{Name: "metadata", TypeName: "bytes"},
+		{Name: "owner", TypeName: "address"},
+		{Name: "name", TypeName: "string"},
+	}
+
+	originalValues := []interface{}{
+		big.NewInt(12345),
+		[]byte{0xca, 0xfe, 0xba, 0xbe},
+		MustNewAddress("abcdefabcdefabcdefabcdefabcdefabcdefabcd"),
+		"test name",
+	}
+
+	// Encode
+	encoder := NewEncoder()
+	err := encoder.write("tuple", components, originalValues)
+	require.NoError(t, err)
+
+	// Decode
+	decoder := NewDecoder(encoder.Buffer())
+	decoded, err := decoder.readTuple(components)
+	require.NoError(t, err)
+
+	// Compare
+	require.Equal(t, len(originalValues), len(decoded))
+	assert.Equal(t, originalValues[0].(*big.Int).Cmp(decoded[0].(*big.Int)), 0, "id mismatch")
+	assert.Equal(t, originalValues[1], decoded[1], "metadata mismatch")
+	assert.Equal(t, originalValues[2], decoded[2], "owner mismatch")
+	assert.Equal(t, originalValues[3], decoded[3], "name mismatch")
+}
