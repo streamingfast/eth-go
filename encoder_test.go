@@ -634,3 +634,230 @@ func TestIsDynamicType(t *testing.T) {
 		})
 	}
 }
+
+// TestEncoder_WriteNestedTupleFromParsedABI tests encoding nested tuples using
+// an ABI that was parsed from JSON. This exercises the full code path including
+// the `toStructComponents` function which must properly recursively parse nested
+// component definitions.
+//
+// This test reproduces the bug reported where nested tuple encoding fails with:
+//
+//	"struct has 0 fields"
+//
+// The root cause is that `toStructComponents` wasn't recursively processing nested
+// components, so the inner tuple's component definitions were not populated.
+func TestEncoder_WriteNestedTupleFromParsedABI(t *testing.T) {
+	// Parse the ABI containing nested tuple functions
+	abi, err := ParseABI("testdata/nested_tuple.abi.json")
+	require.NoError(t, err)
+
+	// Test funTupleWithNestedDynamic: (address, (uint256, string), uint64)
+	t.Run("funTupleWithNestedDynamic with map input", func(t *testing.T) {
+		fn := abi.FindFunctionByName("funTupleWithNestedDynamic")
+		require.NotNil(t, fn, "function funTupleWithNestedDynamic should exist in ABI")
+
+		// Verify that the inner tuple components were properly parsed
+		require.Len(t, fn.Parameters, 1, "should have 1 parameter")
+		require.Equal(t, "tuple", fn.Parameters[0].TypeName)
+		require.Len(t, fn.Parameters[0].Components, 3, "outer tuple should have 3 components")
+		require.Equal(t, "tuple", fn.Parameters[0].Components[1].TypeName, "second component should be a tuple")
+		require.Len(t, fn.Parameters[0].Components[1].Components, 2,
+			"inner tuple should have 2 components - this will fail if nested components weren't parsed")
+
+		// Now test encoding with map[string]interface{}
+		input := map[string]interface{}{
+			"owner": MustNewAddress("aAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa"),
+			"inner": map[string]interface{}{
+				"id":          big.NewInt(456),
+				"description": "nested",
+			},
+			"timestamp": uint64(789),
+		}
+
+		call := fn.NewCall(input)
+		data, err := call.Encode()
+		require.NoError(t, err, "encoding should succeed")
+
+		// Expected encoding uses the function's computed method ID + tuple data
+		// The tuple data matches Solidity's encoding exactly
+		expectedDataHex :=
+			"0000000000000000000000000000000000000000000000000000000000000020" + // offset to tuple
+				"000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + // address owner
+				"0000000000000000000000000000000000000000000000000000000000000060" + // offset to inner tuple
+				"0000000000000000000000000000000000000000000000000000000000000315" + // uint64 timestamp = 789
+				"00000000000000000000000000000000000000000000000000000000000001c8" + // uint256 id = 456
+				"0000000000000000000000000000000000000000000000000000000000000040" + // offset to string
+				"0000000000000000000000000000000000000000000000000000000000000006" + // string length = 6
+				"6e65737465640000000000000000000000000000000000000000000000000000" // "nested"
+
+		// Verify method selector prefix and data
+		assert.Equal(t, fn.MethodID(), data[:4], "method selector should match")
+		assert.Equal(t, expectedDataHex, hex.EncodeToString(data[4:]), "tuple data should match Solidity encoding")
+	})
+
+	t.Run("funTupleWithNestedDynamic with slice input", func(t *testing.T) {
+		fn := abi.FindFunctionByName("funTupleWithNestedDynamic")
+		require.NotNil(t, fn)
+
+		// Test encoding with []interface{}
+		input := []interface{}{
+			MustNewAddress("aAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa"),
+			[]interface{}{
+				big.NewInt(456),
+				"nested",
+			},
+			uint64(789),
+		}
+
+		call := fn.NewCall(input)
+		data, err := call.Encode()
+		require.NoError(t, err, "encoding should succeed")
+
+		expectedDataHex :=
+			"0000000000000000000000000000000000000000000000000000000000000020" +
+				"000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
+				"0000000000000000000000000000000000000000000000000000000000000060" +
+				"0000000000000000000000000000000000000000000000000000000000000315" +
+				"00000000000000000000000000000000000000000000000000000000000001c8" +
+				"0000000000000000000000000000000000000000000000000000000000000040" +
+				"0000000000000000000000000000000000000000000000000000000000000006" +
+				"6e65737465640000000000000000000000000000000000000000000000000000"
+
+		assert.Equal(t, fn.MethodID(), data[:4], "method selector should match")
+		assert.Equal(t, expectedDataHex, hex.EncodeToString(data[4:]), "tuple data should match Solidity encoding")
+	})
+
+	// Test recoverRAVSigner: original bug report case
+	// SignedRAV: (RAV rav, bytes signature)
+	// RAV: (bytes32 collectionId, address payer, address serviceProvider, address dataService, uint64 timestampNs, uint128 valueAggregate, bytes metadata)
+	t.Run("recoverRAVSigner nested tuple encoding", func(t *testing.T) {
+		fn := abi.FindFunctionByName("recoverRAVSigner")
+		require.NotNil(t, fn, "function recoverRAVSigner should exist in ABI")
+
+		// Verify nested components were parsed
+		require.Len(t, fn.Parameters, 1)
+		require.Equal(t, "tuple", fn.Parameters[0].TypeName)
+		require.Len(t, fn.Parameters[0].Components, 2, "SignedRAV should have 2 components")
+		require.Equal(t, "tuple", fn.Parameters[0].Components[0].TypeName, "first component (rav) should be a tuple")
+		require.Len(t, fn.Parameters[0].Components[0].Components, 7,
+			"RAV tuple should have 7 components - this will fail if nested components weren't parsed")
+
+		// Create test data matching the original bug report
+		collectionIDBytes := make([]byte, 32)
+		collectionIDBytes[31] = 0x01 // Just set last byte to 1
+
+		payerAddr := MustNewAddress("1111111111111111111111111111111111111111")
+		spAddr := MustNewAddress("2222222222222222222222222222222222222222")
+		dsAddr := MustNewAddress("3333333333333333333333333333333333333333")
+
+		ravTuple := map[string]interface{}{
+			"collectionId":    collectionIDBytes,
+			"payer":           payerAddr,
+			"serviceProvider": spAddr,
+			"dataService":     dsAddr,
+			"timestampNs":     uint64(123),
+			"valueAggregate":  big.NewInt(1000),
+			"metadata":        []byte{},
+		}
+
+		signedRAVTuple := map[string]interface{}{
+			"rav":       ravTuple,
+			"signature": []byte{0xaa, 0xbb, 0xcc}, // dummy signature
+		}
+
+		call := fn.NewCall(signedRAVTuple)
+		data, err := call.Encode()
+		require.NoError(t, err, "encoding should succeed - original bug caused 'struct has 0 fields' error here")
+
+		// Just verify it encoded something reasonable (method selector + some data)
+		require.True(t, len(data) > 4, "should have encoded data beyond method selector")
+	})
+}
+
+// TestEncoder_WriteNestedTuple tests encoding tuples that contain nested tuples.
+// This matches the Solidity tests in tests/src/test/Codec.sol for:
+// - testFunTupleWithNestedDynamic
+// - testEmitEventUTupleWithNestedDynamic
+//
+// The structs are:
+//
+//	struct InnerDynamic {
+//	    uint256 id;
+//	    string description;
+//	}
+//
+//	struct TupleWithNestedDynamic {
+//	    address owner;
+//	    InnerDynamic inner;
+//	    uint64 timestamp;
+//	}
+//
+// Values: (0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa, (456, "nested"), 789)
+func TestEncoder_WriteNestedTuple(t *testing.T) {
+	// Define components for the inner tuple (InnerDynamic)
+	innerComponents := []*StructComponent{
+		{Name: "id", TypeName: "uint256"},
+		{Name: "description", TypeName: "string"},
+	}
+
+	// Define components for the outer tuple (TupleWithNestedDynamic)
+	outerComponents := []*StructComponent{
+		{Name: "owner", TypeName: "address"},
+		{Name: "inner", TypeName: "tuple", Components: innerComponents},
+		{Name: "timestamp", TypeName: "uint64"},
+	}
+
+	tests := []struct {
+		name      string
+		in        interface{}
+		expectHex string
+	}{
+		{
+			name: "nested tuple using []interface{}",
+			in: []interface{}{
+				MustNewAddress("aAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa"),
+				[]interface{}{
+					big.NewInt(456),
+					"nested",
+				},
+				uint64(789),
+			},
+			// address owner | offset to inner tuple (0x60) | uint64 timestamp (789) |
+			// uint256 id (456) | offset to string (0x40) | string length (6) | string data ("nested")
+			expectHex: "000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
+				"0000000000000000000000000000000000000000000000000000000000000060" +
+				"0000000000000000000000000000000000000000000000000000000000000315" +
+				"00000000000000000000000000000000000000000000000000000000000001c8" +
+				"0000000000000000000000000000000000000000000000000000000000000040" +
+				"0000000000000000000000000000000000000000000000000000000000000006" +
+				"6e65737465640000000000000000000000000000000000000000000000000000",
+		},
+		{
+			name: "nested tuple using map[string]interface{}",
+			in: map[string]interface{}{
+				"owner": MustNewAddress("aAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa"),
+				"inner": map[string]interface{}{
+					"id":          big.NewInt(456),
+					"description": "nested",
+				},
+				"timestamp": uint64(789),
+			},
+			expectHex: "000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
+				"0000000000000000000000000000000000000000000000000000000000000060" +
+				"0000000000000000000000000000000000000000000000000000000000000315" +
+				"00000000000000000000000000000000000000000000000000000000000001c8" +
+				"0000000000000000000000000000000000000000000000000000000000000040" +
+				"0000000000000000000000000000000000000000000000000000000000000006" +
+				"6e65737465640000000000000000000000000000000000000000000000000000",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			e := NewEncoder()
+			err := e.write("tuple", outerComponents, test.in)
+			require.NoError(t, err)
+			assert.Equal(t, test.expectHex, hex.EncodeToString(e.buffer))
+		})
+	}
+}

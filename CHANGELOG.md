@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed nested tuple encoding when using `map[string]interface{}` or `[]interface{}` input types. Previously, encoding nested tuples (tuples containing other tuples) would fail with an error like `struct "<unknown>" has 0 fields` because the ABI parser wasn't recursively processing nested component definitions. The `structComponent` type now includes a `Components` field and `toStructComponents` recursively populates it during ABI parsing.
+
 - Fixed ABI encoding/decoding of tuples with dynamic components (e.g., `bytes`, `string`, or dynamic arrays). Per Solidity ABI spec, a tuple is dynamic if any of its components is dynamic. Previously, `isDynamicType()` only considered `bytes`, `string`, and arrays as dynamic, but not tuples containing dynamic fields. This caused incorrect encoding (inline instead of offset-based) for such tuples.
 
 - `rpc.Block#BaseFee` is now correctly a `*eth.Uint256` value, you can use `(*uint256.Int)(block.BaseFee).Uint64()` to get back the `uint64` value again (you should check for `nil` value though because it **can** be `nil`).

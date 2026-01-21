@@ -781,6 +781,88 @@ contract CodecTest is Test {
         );
     }
 
+    function testFunTupleWithNestedDynamic() public {
+        // TupleWithNestedDynamic: (address owner, InnerDynamic inner, uint64 timestamp)
+        // where InnerDynamic: (uint256 id, string description)
+        Codec.InnerDynamic memory inner = Codec.InnerDynamic(456, "nested");
+        Codec.TupleWithNestedDynamic memory input = Codec.TupleWithNestedDynamic(
+            0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa,
+            inner,
+            789
+        );
+
+        bytes memory actual = abi.encodeWithSignature(
+            "funTupleWithNestedDynamic((address,(uint256,string),uint64))",
+            input
+        );
+
+        codec.logBytes(actual);
+
+        // Expected encoding:
+        // - 4 bytes: method selector
+        // - 32 bytes: offset to outer tuple data (0x20)
+        // Then outer tuple:
+        // - 32 bytes: address owner (inline)
+        // - 32 bytes: offset to inner tuple (0x60 = 96)
+        // - 32 bytes: uint64 timestamp (inline)
+        // Then inner tuple at offset 0x60:
+        // - 32 bytes: uint256 id (inline)
+        // - 32 bytes: offset to string (0x40 = 64 relative to inner tuple start)
+        // - 32 bytes: string length (6)
+        // - 32 bytes: string data ("nested")
+        require(
+            bytesEquals(
+                actual,
+                hex"56e67bfe" // method selector for funTupleWithNestedDynamic((address,(uint256,string),uint64))
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to outer tuple
+                hex"000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" // address owner
+                hex"0000000000000000000000000000000000000000000000000000000000000060" // offset to inner tuple (96 from outer tuple start)
+                hex"0000000000000000000000000000000000000000000000000000000000000315" // uint64 timestamp = 789
+                hex"00000000000000000000000000000000000000000000000000000000000001c8" // uint256 id = 456
+                hex"0000000000000000000000000000000000000000000000000000000000000040" // offset to string (64 from inner tuple start)
+                hex"0000000000000000000000000000000000000000000000000000000000000006" // string length = 6
+                hex"6e65737465640000000000000000000000000000000000000000000000000000" // "nested"
+            ),
+            "Invalid TupleWithNestedDynamic encoding"
+        );
+
+        (bool success, ) = address(codec).call(actual);
+        require(success, "call should have succeeded");
+    }
+
+    function testEmitEventUTupleWithNestedDynamic() public {
+        vm.recordLogs();
+
+        codec.emitEventUTupleWithNestedDynamic();
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 1, "Logs length invalid");
+
+        assertEq(logs[0].topics.length, 1);
+        assertEq(
+            logs[0].topics[0],
+            keccak256("EventUTupleWithNestedDynamic((address,(uint256,string),uint64))")
+        );
+
+        codec.logBytes(logs[0].data);
+
+        // Event data encoding for nested tuple with dynamic component
+        require(
+            bytesEquals(
+                logs[0].data,
+                hex"0000000000000000000000000000000000000000000000000000000000000020" // offset to outer tuple
+                hex"000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" // address owner
+                hex"0000000000000000000000000000000000000000000000000000000000000060" // offset to inner tuple
+                hex"0000000000000000000000000000000000000000000000000000000000000315" // uint64 timestamp = 789
+                hex"00000000000000000000000000000000000000000000000000000000000001c8" // uint256 id = 456
+                hex"0000000000000000000000000000000000000000000000000000000000000040" // offset to string
+                hex"0000000000000000000000000000000000000000000000000000000000000006" // string length = 6
+                hex"6e65737465640000000000000000000000000000000000000000000000000000" // "nested"
+            ),
+            "Invalid EventUTupleWithNestedDynamic data encoding"
+        );
+    }
+
     // ===== End of tests for tuples with dynamic components =====
 
     // FIXME: Shared for all tests ..., copied from test/PersonalSigning

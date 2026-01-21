@@ -1,0 +1,115 @@
+[
+  {
+    "name": "funTupleWithNestedDynamic",
+    "type": "function",
+    "stateMutability": "pure",
+    "inputs": [
+      {
+        "name": "input",
+        "type": "tuple",
+        "internalType": "struct TupleWithNestedDynamic",
+        "components": [
+          {
+            "name": "owner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inner",
+            "type": "tuple",
+            "internalType": "struct InnerDynamic",
+            "components": [
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "description",
+                "type": "string",
+                "internalType": "string"
+              }
+            ]
+          },
+          {
+            "name": "timestamp",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct TupleWithNestedDynamic",
+        "components": [
+          {
+            "name": "owner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inner",
+            "type": "tuple",
+            "internalType": "struct InnerDynamic",
+            "components": [
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "description",
+                "type": "string",
+                "internalType": "string"
+              }
+            ]
+          },
+          {
+            "name": "timestamp",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "recoverRAVSigner",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [
+      {
+        "name": "signedRAV",
+        "type": "tuple",
+        "internalType": "struct SignedRAV",
+        "components": [
+          {
+            "name": "rav",
+            "type": "tuple",
+            "internalType": "struct RAV",
+            "components": [
+              { "name": "collectionId", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "payer", "type": "address", "internalType": "address" },
+              { "name": "serviceProvider", "type": "address", "internalType": "address" },
+              { "name": "dataService", "type": "address", "internalType": "address" },
+              { "name": "timestampNs", "type": "uint64", "internalType": "uint64" },
+              { "name": "valueAggregate", "type": "uint128", "internalType": "uint128" },
+              { "name": "metadata", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "signature", "type": "bytes", "internalType": "bytes" }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  }
+]

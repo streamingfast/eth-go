@@ -228,11 +228,18 @@ func toStructComponents(in []*structComponent) (out []*StructComponent, err erro
 			return nil, fmt.Errorf("invalid component %q type: %w", component.Name, err)
 		}
 
+		// Recursively process nested components for tuple types
+		nestedComponents, err := toStructComponents(component.Components)
+		if err != nil {
+			return nil, fmt.Errorf("invalid nested component in %q: %w", component.Name, err)
+		}
+
 		out[i] = &StructComponent{
 			InternalType: component.InternalType,
 			Name:         component.Name,
 			TypeName:     component.Type,
 			Type:         parsedType,
+			Components:   nestedComponents,
 		}
 	}
 	return out, nil
@@ -269,9 +276,10 @@ type typeInfo struct {
 }
 
 type structComponent struct {
-	InternalType string `json:"internalType"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
+	InternalType string             `json:"internalType"`
+	Name         string             `json:"name"`
+	Type         string             `json:"type"`
+	Components   []*structComponent `json:"components"`
 }
 
 func (c *structComponent) String() string {
