@@ -455,3 +455,21 @@ type StructComponent struct {
 func (c *StructComponent) String() string {
 	return fmt.Sprintf("%s %s (%s)", c.TypeName, c.Name, c.InternalType)
 }
+
+// Signature returns the canonical type signature for this struct component,
+// recursively expanding nested tuples. For example, a tuple containing
+// (address, (uint256, string), uint64) returns "(address,(uint256,string),uint64)".
+func (c *StructComponent) Signature() string {
+	typeName := c.TypeName
+	if strings.HasPrefix(typeName, "tuple") {
+		componentSigs := make([]string, len(c.Components))
+		for i, component := range c.Components {
+			componentSigs[i] = component.Signature()
+		}
+
+		// Replace "tuple" with "(sig1,sig2,...)" preserving any array suffix like [] or [N]
+		typeName = strings.Replace(typeName, "tuple", "("+strings.Join(componentSigs, ",")+")", 1)
+	}
+
+	return typeName
+}

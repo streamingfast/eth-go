@@ -49,6 +49,22 @@ type LogParameter struct {
 	Components []*StructComponent
 }
 
+// Signature returns the canonical type signature for this parameter,
+// recursively expanding nested tuples.
+func (p *LogParameter) Signature() string {
+	typeName := p.TypeName
+	if strings.HasPrefix(typeName, "tuple") {
+		componentSigs := make([]string, len(p.Components))
+		for i, component := range p.Components {
+			componentSigs[i] = component.Signature()
+		}
+
+		typeName = strings.Replace(typeName, "tuple", fmt.Sprintf("(%s)", strings.Join(componentSigs, ",")), 1)
+	}
+
+	return typeName
+}
+
 // returned instantiate a new event from the log definition and uses
 // the received arguments as elements used to resolve the parameters
 // values (indexed and non-indexed).
@@ -182,7 +198,7 @@ func (l *LogEventDef) LogID() []byte {
 func (l *LogEventDef) Signature() string {
 	var args []string
 	for _, parameter := range l.Parameters {
-		args = append(args, parameter.TypeName)
+		args = append(args, parameter.Signature())
 	}
 
 	// It's important that no spaces is introduced

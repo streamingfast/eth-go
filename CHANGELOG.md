@@ -24,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed function selector (method ID) computation for nested tuples. Previously, nested tuples in function signatures were not recursively expanded, causing the literal string `"tuple"` to be used instead of the expanded type signature. For example, a function with a `SignedRAV` parameter containing a nested `RAV` tuple would incorrectly produce `recoverRAVSigner((tuple,bytes))` instead of the correct `recoverRAVSigner(((bytes32,address,address,address,uint64,uint128,bytes),bytes))`. This caused incorrect function selectors to be computed, leading to contract call failures.
+
+- Fixed event topic ID computation for nested tuples. Similar to the function selector fix, event signatures now correctly expand nested tuple types.
+
 - Fixed nested tuple encoding when using `map[string]interface{}` or `[]interface{}` input types. Previously, encoding nested tuples (tuples containing other tuples) would fail with an error like `struct "<unknown>" has 0 fields` because the ABI parser wasn't recursively processing nested component definitions. The `structComponent` type now includes a `Components` field and `toStructComponents` recursively populates it during ABI parsing.
 
 - Fixed ABI encoding/decoding of tuples with dynamic components (e.g., `bytes`, `string`, or dynamic arrays). Per Solidity ABI spec, a tuple is dynamic if any of its components is dynamic. Previously, `isDynamicType()` only considered `bytes`, `string`, and arrays as dynamic, but not tuples containing dynamic fields. This caused incorrect encoding (inline instead of offset-based) for such tuples.
@@ -51,6 +55,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added improved type information on `StructComponent`.
 
 - Added `Components` field to `StructComponent` to support nested tuple types.
+
+- Added `StructComponent.Signature()` method that returns the canonical type signature with recursive tuple expansion.
+
+- Added `LogParameter.Signature()` method that returns the canonical type signature with recursive tuple expansion.
 
 - Added `ABI#FindLogsByTopic` to find all logs with a given topic.
 

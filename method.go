@@ -83,13 +83,12 @@ func newMethodParameter(mStr string) (*MethodParameter, error) {
 func (p *MethodParameter) Signature() string {
 	typeName := p.TypeName
 	if strings.HasPrefix(typeName, "tuple") {
-		// FIXME: Need to be recursive, let's add only once someone request it
-		componentTypeNames := make([]string, len(p.Components))
+		componentSigs := make([]string, len(p.Components))
 		for i, component := range p.Components {
-			componentTypeNames[i] = component.TypeName
+			componentSigs[i] = component.Signature()
 		}
 
-		typeName = strings.Replace(typeName, "tuple", fmt.Sprintf("(%s)", strings.Join(componentTypeNames, ",")), 1)
+		typeName = strings.Replace(typeName, "tuple", fmt.Sprintf("(%s)", strings.Join(componentSigs, ",")), 1)
 	}
 
 	return typeName

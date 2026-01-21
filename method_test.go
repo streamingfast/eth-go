@@ -15,6 +15,7 @@
 package eth
 
 import (
+	"encoding/hex"
 	"math/big"
 	"testing"
 
@@ -419,4 +420,249 @@ func TestNewMethodParameter(t *testing.T) {
 		})
 	}
 
+}
+
+func TestMethodDef_Signature_NestedTuples(t *testing.T) {
+	tests := []struct {
+		name            string
+		methodDef       *MethodDef
+		expectedSig     string
+		expectedMethodID string // first 4 bytes of keccak256(signature) in hex
+	}{
+		{
+			name: "single-level tuple",
+			methodDef: &MethodDef{
+				Name: "encodeRAV",
+				Parameters: []*MethodParameter{
+					{
+						Name:     "rav",
+						TypeName: "tuple",
+						Components: []*StructComponent{
+							{Name: "collectionId", TypeName: "bytes32"},
+							{Name: "payer", TypeName: "address"},
+							{Name: "serviceProvider", TypeName: "address"},
+							{Name: "dataService", TypeName: "address"},
+							{Name: "timestampNs", TypeName: "uint64"},
+							{Name: "valueAggregate", TypeName: "uint128"},
+							{Name: "metadata", TypeName: "bytes"},
+						},
+					},
+				},
+			},
+			expectedSig:     "encodeRAV((bytes32,address,address,address,uint64,uint128,bytes))",
+			expectedMethodID: "26969c4c",
+		},
+		{
+			name: "nested tuple - SignedRAV with nested RAV",
+			methodDef: &MethodDef{
+				Name: "recoverRAVSigner",
+				Parameters: []*MethodParameter{
+					{
+						Name:     "signedRAV",
+						TypeName: "tuple",
+						Components: []*StructComponent{
+							{
+								Name:     "rav",
+								TypeName: "tuple",
+								Components: []*StructComponent{
+									{Name: "collectionId", TypeName: "bytes32"},
+									{Name: "payer", TypeName: "address"},
+									{Name: "serviceProvider", TypeName: "address"},
+									{Name: "dataService", TypeName: "address"},
+									{Name: "timestampNs", TypeName: "uint64"},
+									{Name: "valueAggregate", TypeName: "uint128"},
+									{Name: "metadata", TypeName: "bytes"},
+								},
+							},
+							{Name: "signature", TypeName: "bytes"},
+						},
+					},
+				},
+			},
+			expectedSig:     "recoverRAVSigner(((bytes32,address,address,address,uint64,uint128,bytes),bytes))",
+			expectedMethodID: "63648817",
+		},
+		{
+			name: "nested tuple - TupleWithNestedDynamic",
+			methodDef: &MethodDef{
+				Name: "funTupleWithNestedDynamic",
+				Parameters: []*MethodParameter{
+					{
+						Name:     "input",
+						TypeName: "tuple",
+						Components: []*StructComponent{
+							{Name: "owner", TypeName: "address"},
+							{
+								Name:     "inner",
+								TypeName: "tuple",
+								Components: []*StructComponent{
+									{Name: "id", TypeName: "uint256"},
+									{Name: "description", TypeName: "string"},
+								},
+							},
+							{Name: "timestamp", TypeName: "uint64"},
+						},
+					},
+				},
+			},
+			expectedSig:      "funTupleWithNestedDynamic((address,(uint256,string),uint64))",
+			expectedMethodID: "56e67bfe",
+		},
+		{
+			name: "deeply nested tuple",
+			methodDef: &MethodDef{
+				Name: "deepNested",
+				Parameters: []*MethodParameter{
+					{
+						Name:     "data",
+						TypeName: "tuple",
+						Components: []*StructComponent{
+							{
+								Name:     "level1",
+								TypeName: "tuple",
+								Components: []*StructComponent{
+									{
+										Name:     "level2",
+										TypeName: "tuple",
+										Components: []*StructComponent{
+											{Name: "value", TypeName: "uint256"},
+										},
+									},
+									{Name: "addr", TypeName: "address"},
+								},
+							},
+							{Name: "data", TypeName: "bytes"},
+						},
+					},
+				},
+			},
+			expectedSig:      "deepNested((((uint256),address),bytes))",
+			expectedMethodID: "c2f64ed1",
+		},
+		{
+			name: "array of tuples",
+			methodDef: &MethodDef{
+				Name: "batchProcess",
+				Parameters: []*MethodParameter{
+					{
+						Name:     "items",
+						TypeName: "tuple[]",
+						Components: []*StructComponent{
+							{Name: "id", TypeName: "uint256"},
+							{Name: "owner", TypeName: "address"},
+						},
+					},
+				},
+			},
+			expectedSig:      "batchProcess((uint256,address)[])",
+			expectedMethodID: "584a3c48",
+		},
+		{
+			name: "array of nested tuples",
+			methodDef: &MethodDef{
+				Name: "batchNested",
+				Parameters: []*MethodParameter{
+					{
+						Name:     "items",
+						TypeName: "tuple[]",
+						Components: []*StructComponent{
+							{
+								Name:     "inner",
+								TypeName: "tuple",
+								Components: []*StructComponent{
+									{Name: "value", TypeName: "uint256"},
+									{Name: "name", TypeName: "string"},
+								},
+							},
+							{Name: "flag", TypeName: "bool"},
+						},
+					},
+				},
+			},
+			expectedSig:      "batchNested(((uint256,string),bool)[])",
+			expectedMethodID: "6433c36d",
+		},
+		{
+			name: "mixed parameters with nested tuple",
+			methodDef: &MethodDef{
+				Name: "mixedParams",
+				Parameters: []*MethodParameter{
+					{Name: "id", TypeName: "uint256"},
+					{
+						Name:     "data",
+						TypeName: "tuple",
+						Components: []*StructComponent{
+							{
+								Name:     "nested",
+								TypeName: "tuple",
+								Components: []*StructComponent{
+									{Name: "a", TypeName: "address"},
+									{Name: "b", TypeName: "bytes32"},
+								},
+							},
+							{Name: "value", TypeName: "bytes"},
+						},
+					},
+					{Name: "recipient", TypeName: "address"},
+				},
+			},
+			expectedSig:      "mixedParams(uint256,((address,bytes32),bytes),address)",
+			expectedMethodID: "fe2f7c70",
+		},
+		{
+			name: "fixed-size array of tuples",
+			methodDef: &MethodDef{
+				Name: "fixedArray",
+				Parameters: []*MethodParameter{
+					{
+						Name:     "items",
+						TypeName: "tuple[3]",
+						Components: []*StructComponent{
+							{Name: "x", TypeName: "uint256"},
+							{Name: "y", TypeName: "uint256"},
+						},
+					},
+				},
+			},
+			expectedSig:      "fixedArray((uint256,uint256)[3])",
+			expectedMethodID: "eb589c90",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sig := tt.methodDef.Signature()
+			assert.Equal(t, tt.expectedSig, sig, "signature mismatch")
+
+			methodID := tt.methodDef.MethodID()
+			assert.Equal(t, tt.expectedMethodID, hex.EncodeToString(methodID), "method ID mismatch")
+		})
+	}
+}
+
+func TestMethodDef_Signature_FromParsedABI(t *testing.T) {
+	abi, err := ParseABI("testdata/nested_tuple.abi.json")
+	require.NoError(t, err)
+
+	t.Run("recoverRAVSigner from parsed ABI", func(t *testing.T) {
+		fn := abi.FindFunctionByName("recoverRAVSigner")
+		require.NotNil(t, fn, "function recoverRAVSigner should exist in ABI")
+
+		expectedSig := "recoverRAVSigner(((bytes32,address,address,address,uint64,uint128,bytes),bytes))"
+		assert.Equal(t, expectedSig, fn.Signature(), "signature should recursively expand nested tuples")
+
+		// Expected selector: keccak256("recoverRAVSigner(((bytes32,address,address,address,uint64,uint128,bytes),bytes))")[:4]
+		assert.Equal(t, "63648817", hex.EncodeToString(fn.MethodID()), "method ID should match correct selector")
+	})
+
+	t.Run("funTupleWithNestedDynamic from parsed ABI", func(t *testing.T) {
+		fn := abi.FindFunctionByName("funTupleWithNestedDynamic")
+		require.NotNil(t, fn, "function funTupleWithNestedDynamic should exist in ABI")
+
+		expectedSig := "funTupleWithNestedDynamic((address,(uint256,string),uint64))"
+		assert.Equal(t, expectedSig, fn.Signature(), "signature should recursively expand nested tuples")
+
+		// Expected selector: keccak256("funTupleWithNestedDynamic((address,(uint256,string),uint64))")[:4]
+		assert.Equal(t, "56e67bfe", hex.EncodeToString(fn.MethodID()), "method ID should match correct selector")
+	})
 }
