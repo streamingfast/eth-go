@@ -202,6 +202,8 @@ func OneOfTopic(topics ...interface{}) (out TopicFilterExpr) {
 }
 
 func (c *Client) Logs(ctx context.Context, params LogsParams) ([]*LogEntry, error) {
+	params.FromBlock.shortBlockNumberNotation = true // these do not support long `{"blockNumber": 1234}` format
+	params.ToBlock.shortBlockNumberNotation = true
 	return Do[[]*LogEntry](c, ctx, "eth_getLogs", []interface{}{params})
 }
 
@@ -228,6 +230,7 @@ func WithGetBlockFullTransaction() GetBlockOption {
 //
 // Uses RPC call `eth_getBlockByNumber`
 func (c *Client) GetBlockByNumber(ctx context.Context, ref *BlockRef, opts ...GetBlockOption) (*Block, error) {
+	ref.shortBlockNumberNotation = true // this does not support long `{"blockNumber": 1234}` format
 	return c.getBlock(ctx, "eth_getBlockByNumber", ref, opts)
 }
 

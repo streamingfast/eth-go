@@ -17,9 +17,10 @@ var EarliestBlock = &BlockRef{tag: "earliest"}
 var FinalizedBlock = &BlockRef{tag: "finalized"}
 
 type BlockRef struct {
-	tag   string
-	value uint64
-	hash  eth.Hash
+	tag                      string
+	value                    uint64
+	hash                     eth.Hash
+	shortBlockNumberNotation bool
 }
 
 // BlockHash is supported on some providers like Alchemy and is based on [EIP-1898](https://eips.ethereum.org/EIPS/eip-1898)
@@ -84,6 +85,11 @@ func (b *BlockRef) BlockNumber() (number uint64, ok bool) {
 	}
 
 	return b.value, true
+}
+
+// SetShortBlockNumberNotation sets the BlockRef to always be marshalled as a short string (ex: "0x123" or "latest") and never as long format like `{"blockNumber": ...}`
+func (b *BlockRef) SetShortBlockNumberNotation() {
+	b.shortBlockNumberNotation = true
 }
 
 func (b *BlockRef) BlockHash() (hash eth.Hash, ok bool) {
@@ -231,10 +237,10 @@ func (b *BlockRef) MarshalText() (string, error) {
 	return fmt.Sprintf("BlockNumber: %d", b.value), nil
 }
 
-var useShortBlockNumberNotation bool
+var defaultShortBlockNumberNotation bool
 
 func init() {
-	useShortBlockNumberNotation = os.Getenv("ETH_RPC_SHORT_BLOCK_NUMBER_NOTATION") == "true"
+	defaultShortBlockNumberNotation = os.Getenv("ETH_RPC_SHORT_BLOCK_NUMBER_NOTATION") == "true"
 }
 
 func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
@@ -254,7 +260,7 @@ func (b *BlockRef) MarshalJSONRPC() ([]byte, error) {
 		})
 	}
 
-	if useShortBlockNumberNotation {
+	if b.shortBlockNumberNotation || defaultShortBlockNumberNotation {
 		return fmt.Appendf(nil, "\"0x%x\"", b.value), nil
 	}
 
