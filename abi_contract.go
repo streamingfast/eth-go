@@ -82,11 +82,13 @@ func parseABIFromReader(reader io.Reader) (*ABI, error) {
 	}
 
 	abi := &ABI{
-		LogEventsMap: map[string][]*LogEventDef{},
-		FunctionsMap: map[string][]*MethodDef{},
+		LogEventsMap:    map[string][]*LogEventDef{},
+		FunctionsMap:    map[string][]*MethodDef{},
+		ConstructorsMap: map[string][]*ConstructorDef{},
 
-		LogEventsByNameMap: map[string][]*LogEventDef{},
-		FunctionsByNameMap: map[string][]*MethodDef{},
+		LogEventsByNameMap:    map[string][]*LogEventDef{},
+		FunctionsByNameMap:    map[string][]*MethodDef{},
+		ConstructorsByNameMap: map[string][]*ConstructorDef{},
 	}
 
 	for _, decl := range declarations {
@@ -100,6 +102,19 @@ func parseABIFromReader(reader io.Reader) (*ABI, error) {
 
 			abi.FunctionsMap[methodID] = append(abi.FunctionsMap[methodID], methodDef)
 			abi.FunctionsByNameMap[methodDef.Name] = append(abi.FunctionsByNameMap[methodDef.Name], methodDef)
+		}
+
+		if decl.Type == DeclarationTypeConstructor {
+			constructorDef, err := decl.toConstructorDef()
+			if err != nil {
+				return nil, fmt.Errorf("invalid constructor: %w", err)
+			}
+
+			// Constructors are indexed by their signature (parameter types)
+			signature := constructorDef.Signature()
+			abi.ConstructorsMap[signature] = append(abi.ConstructorsMap[signature], constructorDef)
+			// Also store under empty name for easy lookup (most contracts have one constructor)
+			abi.ConstructorsByNameMap[""] = append(abi.ConstructorsByNameMap[""], constructorDef)
 		}
 
 		if decl.Type == DeclarationTypeEvent {
@@ -208,6 +223,41 @@ func (d *declaration) toFunctionDef() (*MethodDef, error) {
 				TypeName:     output.Type,
 				Type:         parsedType,
 				InternalType: output.InternalType,
+				Components:   structComponents,
+			}
+		}
+	}
+
+	return out, nil
+}
+
+func (d *declaration) toConstructorDef() (*ConstructorDef, error) {
+	out := &ConstructorDef{}
+	out.StateMutability = d.StateMutability
+
+	// Handle old solc versions
+	if d.Payable {
+		out.StateMutability = StateMutabilityPayable
+	}
+
+	if len(d.Inputs) > 0 {
+		out.Parameters = make([]*MethodParameter, len(d.Inputs))
+		for i, input := range d.Inputs {
+			parsedType, err := ParseType(input.Type)
+			if err != nil {
+				return nil, fmt.Errorf("invalid input parameter %q type: %w", input.Name, err)
+			}
+
+			structComponents, err := toStructComponents(input.Components)
+			if err != nil {
+				return nil, fmt.Errorf("invalid input %q struct component: %w", input.Name, err)
+			}
+
+			out.Parameters[i] = &MethodParameter{
+				Name:         input.Name,
+				TypeName:     input.Type,
+				Type:         parsedType,
+				InternalType: input.InternalType,
 				Components:   structComponents,
 			}
 		}

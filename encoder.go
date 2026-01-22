@@ -70,6 +70,25 @@ func (e *Encoder) WriteMethodCall(method *MethodCall) error {
 	return e.writeParameters(4, method.MethodDef.Parameters, method.Data)
 }
 
+// WriteConstructorCall encodes a constructor call to the buffer. Unlike method calls,
+// constructor calls do not include a 4-byte method selector - they only contain the
+// encoded parameters which get appended to the contract bytecode during deployment.
+func (e *Encoder) WriteConstructorCall(constructor *ConstructorCall) error {
+	if len(constructor.Data) != len(constructor.ConstructorDef.Parameters) {
+		return fmt.Errorf("constructor is expecting %d parameters but %d were provided", len(constructor.ConstructorDef.Parameters), len(constructor.Data))
+	}
+
+	if tracer.Enabled() {
+		zlog.Debug("encoding constructor call",
+			zap.String("signature", constructor.ConstructorDef.Signature()),
+			zap.Int("param_count", len(constructor.ConstructorDef.Parameters)),
+		)
+	}
+
+	// Constructor encoding has no method selector, offset starts at 0
+	return e.writeParameters(0, constructor.ConstructorDef.Parameters, constructor.Data)
+}
+
 func (e *Encoder) WriteLogData(parameters []*LogParameter, data []interface{}) error {
 	asFakeMethodParams := make([]*MethodParameter, len(parameters))
 	for i, param := range parameters {

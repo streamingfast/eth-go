@@ -245,6 +245,65 @@ func TestABIContract_ParseFile(t *testing.T) {
 	}
 }
 
+func TestABIContract_ParseConstructor(t *testing.T) {
+	t.Run("simple constructor with address", func(t *testing.T) {
+		abi, err := ParseABI("testdata/uniswap_v2_factory.abi.json")
+		require.NoError(t, err)
+
+		constructor := abi.FindConstructor()
+		require.NotNil(t, constructor, "constructor should be parsed")
+		require.Len(t, constructor.Parameters, 1)
+		assert.Equal(t, "address", constructor.Parameters[0].TypeName)
+		assert.Equal(t, "_feeToSetter", constructor.Parameters[0].Name)
+		assert.Equal(t, StateMutabilityNonPayable, constructor.StateMutability)
+		assert.Equal(t, "(address)", constructor.Signature())
+	})
+
+	t.Run("constructor with tuple", func(t *testing.T) {
+		abi, err := ParseABI("testdata/constructor_with_tuple.abi.json")
+		require.NoError(t, err)
+
+		constructor := abi.FindConstructor()
+		require.NotNil(t, constructor, "constructor should be parsed")
+		require.Len(t, constructor.Parameters, 1)
+		assert.Equal(t, "tuple", constructor.Parameters[0].TypeName)
+		assert.Equal(t, "config", constructor.Parameters[0].Name)
+
+		// Verify nested components were parsed
+		require.Len(t, constructor.Parameters[0].Components, 3)
+		assert.Equal(t, "address", constructor.Parameters[0].Components[0].TypeName)
+		assert.Equal(t, "token", constructor.Parameters[0].Components[0].Name)
+		assert.Equal(t, "uint256", constructor.Parameters[0].Components[1].TypeName)
+		assert.Equal(t, "amount", constructor.Parameters[0].Components[1].Name)
+		assert.Equal(t, "string", constructor.Parameters[0].Components[2].TypeName)
+		assert.Equal(t, "name", constructor.Parameters[0].Components[2].Name)
+
+		assert.Equal(t, "((address,uint256,string))", constructor.Signature())
+	})
+
+	t.Run("constructor lookup methods", func(t *testing.T) {
+		abi, err := ParseABI("testdata/uniswap_v2_factory.abi.json")
+		require.NoError(t, err)
+
+		// Test FindConstructor
+		constructor := abi.FindConstructor()
+		require.NotNil(t, constructor)
+
+		// Test FindConstructors (should return all constructors)
+		constructors := abi.FindConstructors()
+		require.Len(t, constructors, 1)
+
+		// Test FindConstructorBySignature
+		constructorBySignature := abi.FindConstructorBySignature("(address)")
+		require.NotNil(t, constructorBySignature)
+		assert.Equal(t, constructor, constructorBySignature)
+
+		// Test with non-existent signature
+		constructorNotFound := abi.FindConstructorBySignature("(uint256)")
+		assert.Nil(t, constructorNotFound)
+	})
+}
+
 func abiEquals(t *testing.T, expected *ABI, actual *ABI) {
 	if len(expected.LogEventsByNameMap) != len(actual.LogEventsByNameMap) {
 		require.Equal(t, expected.LogEventsByNameMap, actual.LogEventsByNameMap)

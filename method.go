@@ -101,6 +101,125 @@ type MethodDef struct {
 	StateMutability  StateMutability
 }
 
+// ConstructorDef represents the constructor of a Solidity contract.
+// Unlike methods, constructors have no name and no return parameters.
+type ConstructorDef struct {
+	Parameters      []*MethodParameter
+	StateMutability StateMutability
+}
+
+// Signature returns the canonical signature of the constructor parameters
+// in the format "(type1,type2,...)".
+func (c *ConstructorDef) Signature() string {
+	var args []string
+	for _, parameter := range c.Parameters {
+		args = append(args, parameter.Signature())
+	}
+
+	return fmt.Sprintf("(%s)", strings.Join(args, ","))
+}
+
+// String returns a human-readable representation of the constructor.
+func (c *ConstructorDef) String() string {
+	var args []string
+	for _, parameter := range c.Parameters {
+		args = append(args, fmt.Sprintf("%s %s", parameter.TypeName, parameter.Name))
+	}
+
+	return fmt.Sprintf("constructor(%s)", strings.Join(args, ","))
+}
+
+// NewCall instantiates a new call from the constructor definition and uses
+// the received arguments as elements used to resolve the parameters values.
+//
+// A constructor call can be encoded to produce the data that should be
+// appended to the contract bytecode when deploying the contract.
+func (c *ConstructorDef) NewCall(args ...interface{}) *ConstructorCall {
+	call := &ConstructorCall{ConstructorDef: c}
+	if len(args) > 0 {
+		call.Data = make([]interface{}, len(args))
+	}
+
+	for i, arg := range args {
+		call.Data[i] = arg
+	}
+
+	return call
+}
+
+// NewCallFromString works exactly like NewCall except that it assumes all
+// arguments are string representations of the actual Ethereum types defined
+// by the constructor and converts them to the correct types.
+func (c *ConstructorDef) NewCallFromString(args ...string) *ConstructorCall {
+	call := &ConstructorCall{ConstructorDef: c}
+
+	for _, arg := range args {
+		call.AppendArgFromString(arg)
+	}
+
+	return call
+}
+
+// ConstructorCall represents a specific invocation of a constructor with
+// concrete parameter values. It can be encoded to produce the ABI-encoded
+// constructor arguments.
+type ConstructorCall struct {
+	ConstructorDef *ConstructorDef
+	Data           []interface{}
+
+	err []error
+}
+
+// AppendArgFromString appends an argument by converting its string representation
+// to the appropriate type based on the constructor parameter definition.
+func (c *ConstructorCall) AppendArgFromString(v string) {
+	i := len(c.Data)
+	if i >= len(c.ConstructorDef.Parameters) {
+		c.err = append(c.err, fmt.Errorf("args exceeds constructor parameter count %d", len(c.ConstructorDef.Parameters)))
+		return
+	}
+
+	param := c.ConstructorDef.Parameters[i]
+	out, err := argToDataType(v, param.TypeName, param.Components)
+	if err != nil {
+		c.err = append(c.err, fmt.Errorf("invalid string argument %q for parameter %s: %w", param.Name, v, err))
+		return
+	}
+
+	c.Data = append(c.Data, out)
+}
+
+// AppendArg appends a raw argument value to the constructor call data.
+func (c *ConstructorCall) AppendArg(v interface{}) {
+	c.Data = append(c.Data, v)
+}
+
+// MustEncode encodes the constructor call and panics if encoding fails.
+func (c *ConstructorCall) MustEncode() []byte {
+	out, err := c.Encode()
+	if err != nil {
+		panic(fmt.Errorf("unable to encode constructor call: %w", err))
+	}
+
+	return out
+}
+
+// Encode encodes the constructor call arguments according to the Ethereum ABI
+// specification. Unlike method calls, constructor encoding does not include
+// a 4-byte method selector - it's just the encoded parameters.
+func (c *ConstructorCall) Encode() ([]byte, error) {
+	if len(c.err) > 0 {
+		return nil, fmt.Errorf("%s", c.err)
+	}
+
+	enc := NewEncoder()
+	err := enc.WriteConstructorCall(c)
+	if err != nil {
+		return nil, err
+	}
+	return enc.Buffer(), nil
+}
+
 func MustNewMethodDef(signature string) *MethodDef {
 	def, err := NewMethodDef(signature)
 	if err != nil {

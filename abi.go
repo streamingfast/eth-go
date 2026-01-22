@@ -22,11 +22,11 @@ import "go.uber.org/zap"
 type ABI struct {
 	LogEventsMap    map[string][]*LogEventDef
 	FunctionsMap    map[string][]*MethodDef
-	ConstructorsMap map[string][]*MethodDef
+	ConstructorsMap map[string][]*ConstructorDef
 
 	LogEventsByNameMap    map[string][]*LogEventDef
 	FunctionsByNameMap    map[string][]*MethodDef
-	ConstructorsByNameMap map[string][]*MethodDef
+	ConstructorsByNameMap map[string][]*ConstructorDef
 }
 
 // Deprecated Use FindLogByTopic
@@ -89,6 +89,31 @@ func (a *ABI) FindFunctionsByName(name string) []*MethodDef {
 	zlog.Info("looking for function by name", zap.Stringer("method_name", Hash(name)))
 
 	return a.FunctionsByNameMap[name]
+}
+
+// FindConstructor returns the first constructor defined in this ABI.
+// Most contracts have a single constructor, so this is a convenience method.
+func (a *ABI) FindConstructor() *ConstructorDef {
+	zlog.Info("looking for constructor")
+
+	return firstOr(a.ConstructorsByNameMap[""], nil)
+}
+
+// FindConstructors returns **all** constructors defined in this ABI.
+// Note: While Solidity contracts can only have one constructor, ABIs parsed
+// from multiple sources might contain multiple constructors.
+func (a *ABI) FindConstructors() []*ConstructorDef {
+	zlog.Info("looking for all constructors")
+
+	return a.ConstructorsByNameMap[""]
+}
+
+// FindConstructorBySignature finds a constructor by its parameter signature.
+// The signature should be in the format "(type1,type2,...)" e.g., "(address,uint256)".
+func (a *ABI) FindConstructorBySignature(signature string) *ConstructorDef {
+	zlog.Info("looking for constructor by signature", zap.String("signature", signature))
+
+	return firstOr(a.ConstructorsMap[signature], nil)
 }
 
 func firstOr[T any](elements []T, defaultValue T) T {

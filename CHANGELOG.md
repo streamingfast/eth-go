@@ -48,6 +48,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- Added support for constructor encoding in ABI. New `ConstructorDef` type represents contract constructors, with `NewCall()` method to create `ConstructorCall` instances that can be encoded. Unlike method calls, constructor encoding does not include a 4-byte method selector - it's just the ABI-encoded parameters.
+
+- Added `ABI#FindConstructor()` to retrieve the first constructor from the ABI.
+
+- Added `ABI#FindConstructors()` to retrieve all constructors from the ABI.
+
+- Added `ABI#FindConstructorBySignature(signature string)` to find a constructor by its parameter signature (e.g., `"(address,uint256)"`).
+
 - Added `NewAddressLoose` that accepts address that might contain less or more than 20 bytes.
 
 - Added improved type information on `LogEventDef`.

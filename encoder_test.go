@@ -774,6 +774,139 @@ func TestEncoder_WriteNestedTupleFromParsedABI(t *testing.T) {
 	})
 }
 
+// TestEncoder_WriteConstructorCall tests encoding constructor calls.
+// Unlike method calls, constructor encoding does not include a 4-byte method selector.
+func TestEncoder_WriteConstructorCall(t *testing.T) {
+	t.Run("simple constructor with address", func(t *testing.T) {
+		// Parse ABI containing constructor
+		abi, err := ParseABI("testdata/uniswap_v2_factory.abi.json")
+		require.NoError(t, err)
+
+		constructor := abi.FindConstructor()
+		require.NotNil(t, constructor, "constructor should exist")
+		require.Len(t, constructor.Parameters, 1)
+		assert.Equal(t, "address", constructor.Parameters[0].TypeName)
+
+		call := constructor.NewCall(MustNewAddress("7d97ba95dac25316b9531152b3baa32327994da8"))
+		data, err := call.Encode()
+		require.NoError(t, err)
+
+		// Constructor encoding has NO method selector, just the encoded parameters
+		expectedHex := "0000000000000000000000007d97ba95dac25316b9531152b3baa32327994da8"
+		assert.Equal(t, expectedHex, hex.EncodeToString(data))
+	})
+
+	t.Run("constructor with tuple containing dynamic type", func(t *testing.T) {
+		// Parse ABI with tuple constructor
+		abi, err := ParseABI("testdata/constructor_with_tuple.abi.json")
+		require.NoError(t, err)
+
+		constructor := abi.FindConstructor()
+		require.NotNil(t, constructor, "constructor should exist")
+		require.Len(t, constructor.Parameters, 1)
+		assert.Equal(t, "tuple", constructor.Parameters[0].TypeName)
+
+		// Config struct: { token: address, amount: uint256, name: string }
+		configData := map[string]interface{}{
+			"token":  MustNewAddress("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			"amount": big.NewInt(1000),
+			"name":   "test",
+		}
+
+		call := constructor.NewCall(configData)
+		data, err := call.Encode()
+		require.NoError(t, err)
+
+		// Expected encoding follows tuple field order (token, amount, name):
+		// - Tuple is dynamic (contains string), so top-level has offset
+		// - Inside tuple: address (static), uint256 (static), offset to string, then string data
+		expectedHex := "0000000000000000000000000000000000000000000000000000000000000020" + // offset to tuple
+			"000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + // address token
+			"00000000000000000000000000000000000000000000000000000000000003e8" + // uint256 amount = 1000
+			"0000000000000000000000000000000000000000000000000000000000000060" + // offset to string (3*32 = 0x60)
+			"0000000000000000000000000000000000000000000000000000000000000004" + // string length = 4
+			"7465737400000000000000000000000000000000000000000000000000000000" // "test"
+		assert.Equal(t, expectedHex, hex.EncodeToString(data))
+	})
+
+	t.Run("constructor with slice input", func(t *testing.T) {
+		// Parse ABI with tuple constructor
+		abi, err := ParseABI("testdata/constructor_with_tuple.abi.json")
+		require.NoError(t, err)
+
+		constructor := abi.FindConstructor()
+		require.NotNil(t, constructor, "constructor should exist")
+
+		// Config struct using slice: [token, amount, name]
+		configData := []interface{}{
+			MustNewAddress("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			big.NewInt(500),
+			"hello",
+		}
+
+		call := constructor.NewCall(configData)
+		data, err := call.Encode()
+		require.NoError(t, err)
+
+		// Same encoding order as map test
+		expectedHex := "0000000000000000000000000000000000000000000000000000000000000020" + // offset to tuple
+			"000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" + // address token
+			"00000000000000000000000000000000000000000000000000000000000001f4" + // uint256 amount = 500
+			"0000000000000000000000000000000000000000000000000000000000000060" + // offset to string
+			"0000000000000000000000000000000000000000000000000000000000000005" + // string length = 5
+			"68656c6c6f000000000000000000000000000000000000000000000000000000" // "hello"
+		assert.Equal(t, expectedHex, hex.EncodeToString(data))
+	})
+
+	t.Run("manual constructor definition", func(t *testing.T) {
+		// Test creating a ConstructorDef manually (not from ABI)
+		constructor := &ConstructorDef{
+			Parameters: []*MethodParameter{
+				{TypeName: "uint256"},
+				{TypeName: "address"},
+				{TypeName: "bool"},
+			},
+			StateMutability: StateMutabilityNonPayable,
+		}
+
+		call := constructor.NewCall(
+			big.NewInt(42),
+			MustNewAddress("cccccccccccccccccccccccccccccccccccccccc"),
+			true,
+		)
+		data, err := call.Encode()
+		require.NoError(t, err)
+
+		expectedHex := "000000000000000000000000000000000000000000000000000000000000002a" + // uint256 = 42
+			"000000000000000000000000cccccccccccccccccccccccccccccccccccccccc" + // address
+			"0000000000000000000000000000000000000000000000000000000000000001" // bool = true
+		assert.Equal(t, expectedHex, hex.EncodeToString(data))
+	})
+
+	t.Run("constructor signature", func(t *testing.T) {
+		constructor := &ConstructorDef{
+			Parameters: []*MethodParameter{
+				{TypeName: "uint256"},
+				{TypeName: "address"},
+			},
+		}
+		assert.Equal(t, "(uint256,address)", constructor.Signature())
+
+		emptyConstructor := &ConstructorDef{}
+		assert.Equal(t, "()", emptyConstructor.Signature())
+	})
+
+	t.Run("constructor string representation", func(t *testing.T) {
+		constructor := &ConstructorDef{
+			Parameters: []*MethodParameter{
+				{TypeName: "uint256", Name: "amount"},
+				{TypeName: "address", Name: "owner"},
+			},
+		}
+		assert.Equal(t, "constructor(uint256 amount,address owner)", constructor.String())
+	})
+}
+
 // TestEncoder_WriteNestedTuple tests encoding tuples that contain nested tuples.
 // This matches the Solidity tests in tests/src/test/Codec.sol for:
 // - testFunTupleWithNestedDynamic
