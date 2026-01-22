@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed `rpc.Do[T]` failing when `T` is `string`. The function now returns the raw result string directly without attempting JSON unmarshal for string types, since `DoRequest` already returns the unquoted string value.
+
 - Fixed function selector (method ID) computation for nested tuples. Previously, nested tuples in function signatures were not recursively expanded, causing the literal string `"tuple"` to be used instead of the expanded type signature. For example, a function with a `SignedRAV` parameter containing a nested `RAV` tuple would incorrectly produce `recoverRAVSigner((tuple,bytes))` instead of the correct `recoverRAVSigner(((bytes32,address,address,address,uint64,uint128,bytes),bytes))`. This caused incorrect function selectors to be computed, leading to contract call failures.
 
 - Fixed event topic ID computation for nested tuples. Similar to the function selector fix, event signatures now correctly expand nested tuple types.

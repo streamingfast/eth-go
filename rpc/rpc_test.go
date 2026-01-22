@@ -208,3 +208,46 @@ func (s *mockJSONRPCServer) RequestBody(t *testing.T) (out map[string]interface{
 
 	return out
 }
+
+func TestDo_StringResult(t *testing.T) {
+	// This test verifies that Do[string] correctly handles string results from JSON-RPC.
+	// The JSON-RPC response for a string result is {"id":"0x1","result":"0x1234..."}.
+	// When gjson extracts the result, it returns the unquoted string "0x1234...".
+	// Do[string] should return this value directly without attempting JSON unmarshal.
+	server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":"0xabc123def456"}`))
+	defer closer()
+
+	client := NewClient(server.URL)
+	result, err := Do[string](client, context.Background(), "eth_sendTransaction", []interface{}{})
+
+	require.NoError(t, err)
+	assert.Equal(t, "0xabc123def456", result)
+}
+
+func TestDo_StructResult(t *testing.T) {
+	// Verify that Do[T] still works correctly for struct types
+	type TestStruct struct {
+		Value string `json:"value"`
+	}
+
+	server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":{"value":"test"}}`))
+	defer closer()
+
+	client := NewClient(server.URL)
+	result, err := Do[TestStruct](client, context.Background(), "test_method", []interface{}{})
+
+	require.NoError(t, err)
+	assert.Equal(t, TestStruct{Value: "test"}, result)
+}
+
+func TestDo_EmptyResult(t *testing.T) {
+	// Verify that Do[T] handles empty results correctly
+	server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":""}`))
+	defer closer()
+
+	client := NewClient(server.URL)
+	result, err := Do[string](client, context.Background(), "test_method", []interface{}{})
+
+	require.NoError(t, err)
+	assert.Equal(t, "", result)
+}

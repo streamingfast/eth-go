@@ -638,6 +638,9 @@ func (c *Client) DoRequest(ctx context.Context, method string, params []interfac
 
 // Do performs an RPC request and unmarshals the response into the type T.
 // It wraps DoRequest and handles JSON unmarshalling automatically.
+//
+// When T is string, the result is returned directly without JSON unmarshalling
+// since DoRequest already returns the unquoted string value from the JSON response.
 func Do[T any](c *Client, ctx context.Context, method string, params []interface{}) (out T, err error) {
 	result, err := c.DoRequest(ctx, method, params)
 	if err != nil {
@@ -645,6 +648,14 @@ func Do[T any](c *Client, ctx context.Context, method string, params []interface
 	}
 
 	if result == "" {
+		return out, nil
+	}
+
+	// Handle string type directly without JSON unmarshal.
+	// DoRequest returns the unquoted string value (e.g., "0x1234..." becomes 0x1234...),
+	// so we can't use json.Unmarshal on it for string types.
+	if s, ok := any(&out).(*string); ok {
+		*s = result
 		return out, nil
 	}
 
