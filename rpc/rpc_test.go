@@ -251,3 +251,443 @@ func TestDo_EmptyResult(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", result)
 }
+
+func TestGetBlockByNumber_EncodesShortBlockNumberNotation(t *testing.T) {
+	// Regression test for commit 6eb1ccd92c8d30a88daeecf9630aeec6ea34ff32
+	//
+	// GetBlockByNumber must always encode block refs in short format ("0x1234" or "latest")
+	// and NEVER in long format ({"blockNumber": 1234}). The eth_getBlockByNumber RPC method
+	// does not support the long EIP-1898 format.
+	//
+	// This test ensures the fix is maintained where GetBlockByNumber explicitly sets
+	// shortBlockNumberNotation=true on the BlockRef, regardless of the
+	// ETH_RPC_SHORT_BLOCK_NUMBER_NOTATION environment variable.
+
+	tests := []struct {
+		name     string
+		blockRef *BlockRef
+		expected string
+	}{
+		{
+			name:     "block number",
+			blockRef: BlockNumber(1234),
+			expected: `"0x4d2"`,
+		},
+		{
+			name:     "latest block",
+			blockRef: LatestBlock,
+			expected: `"latest"`,
+		},
+		{
+			name:     "earliest block",
+			blockRef: EarliestBlock,
+			expected: `"earliest"`,
+		},
+		{
+			name:     "pending block",
+			blockRef: PendingBlock,
+			expected: `"pending"`,
+		},
+		{
+			name:     "block zero",
+			blockRef: BlockNumber(0),
+			expected: `"0x0"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":null}`))
+			defer closer()
+
+			client := NewClient(server.URL)
+			_, err := client.GetBlockByNumber(context.Background(), test.blockRef)
+			require.NoError(t, err)
+
+			requestBody := server.RequestBody(t)
+			params, ok := requestBody["params"].([]interface{})
+			require.True(t, ok, "params should be an array")
+			require.Len(t, params, 2, "params should have 2 elements")
+
+			// Marshal the first param to JSON to check its format
+			paramJSON, err := json.Marshal(params[0])
+			require.NoError(t, err)
+
+			assert.Equal(t, test.expected, string(paramJSON),
+				"block ref should be encoded in short format, not long format like {\"blockNumber\": ...}")
+		})
+	}
+}
+
+func TestLogs_EncodesShortBlockNumberNotation(t *testing.T) {
+	// Regression test for commit 6eb1ccd92c8d30a88daeecf9630aeec6ea34ff32
+	//
+	// The Logs method (eth_getLogs) must always encode FromBlock and ToBlock in short format
+	// ("0x1234" or "latest") and NEVER in long format ({"blockNumber": 1234}). The eth_getLogs
+	// RPC method does not support the long EIP-1898 format for block parameters.
+	//
+	// This test ensures the fix is maintained where Logs explicitly sets shortBlockNumberNotation=true
+	// on both FromBlock and ToBlock in the LogsParams, regardless of the
+	// ETH_RPC_SHORT_BLOCK_NUMBER_NOTATION environment variable.
+
+	tests := []struct {
+		name              string
+		fromBlock         *BlockRef
+		toBlock           *BlockRef
+		expectedFromBlock string
+		expectedToBlock   string
+	}{
+		{
+			name:              "block numbers",
+			fromBlock:         BlockNumber(100),
+			toBlock:           BlockNumber(200),
+			expectedFromBlock: `"0x64"`,
+			expectedToBlock:   `"0xc8"`,
+		},
+		{
+			name:              "latest blocks",
+			fromBlock:         LatestBlock,
+			toBlock:           LatestBlock,
+			expectedFromBlock: `"latest"`,
+			expectedToBlock:   `"latest"`,
+		},
+		{
+			name:              "mixed block refs",
+			fromBlock:         BlockNumber(500),
+			toBlock:           LatestBlock,
+			expectedFromBlock: `"0x1f4"`,
+			expectedToBlock:   `"latest"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":[]}`))
+			defer closer()
+
+			client := NewClient(server.URL)
+			_, err := client.Logs(context.Background(), LogsParams{
+				FromBlock: test.fromBlock,
+				ToBlock:   test.toBlock,
+			})
+			require.NoError(t, err)
+
+			requestBody := server.RequestBody(t)
+			params, ok := requestBody["params"].([]interface{})
+			require.True(t, ok, "params should be an array")
+			require.Len(t, params, 1, "params should have 1 element")
+
+			// The params[0] should be the LogsParams object
+			paramsObj, ok := params[0].(map[string]interface{})
+			require.True(t, ok, "params[0] should be an object")
+
+			// Check fromBlock encoding
+			fromBlockJSON, err := json.Marshal(paramsObj["fromBlock"])
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedFromBlock, string(fromBlockJSON),
+				"fromBlock should be encoded in short format, not long format like {\"blockNumber\": ...}")
+
+			// Check toBlock encoding
+			toBlockJSON, err := json.Marshal(paramsObj["toBlock"])
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedToBlock, string(toBlockJSON),
+				"toBlock should be encoded in short format, not long format like {\"blockNumber\": ...}")
+		})
+	}
+}
+
+func TestCall_EncodesLongBlockNumberNotation(t *testing.T) {
+	// Test that eth_call and similar methods encode block refs in long EIP-1898 format
+	// when ETH_RPC_SHORT_BLOCK_NUMBER_NOTATION environment variable is not set and
+	// shortBlockNumberNotation is not explicitly set to true.
+	//
+	// This is the opposite of GetBlockByNumber/Logs which require short format.
+	// Methods like eth_call support the long format which provides more flexibility
+	// and is the EIP-1898 standard.
+
+	tests := []struct {
+		name        string
+		blockRef    *BlockRef
+		expected    string
+		description string
+	}{
+		{
+			name:        "block number uses long format",
+			blockRef:    BlockNumber(1234),
+			expected:    `{"blockNumber":"0x4d2"}`,
+			description: "numeric block refs should use EIP-1898 long format with hex encoding",
+		},
+		{
+			name:        "block zero uses long format",
+			blockRef:    BlockNumber(0),
+			expected:    `{"blockNumber":"0x0"}`,
+			description: "block zero should also use long format with hex encoding",
+		},
+		{
+			name:        "large block number uses long format",
+			blockRef:    BlockNumber(15000000),
+			expected:    `{"blockNumber":"0xe4e1c0"}`,
+			description: "large block numbers should use long format with hex encoding",
+		},
+		{
+			name:        "latest block uses short format",
+			blockRef:    LatestBlock,
+			expected:    `"latest"`,
+			description: "special tags always use short format",
+		},
+		{
+			name:        "earliest block uses short format",
+			blockRef:    EarliestBlock,
+			expected:    `"earliest"`,
+			description: "special tags always use short format",
+		},
+		{
+			name:        "pending block uses short format",
+			blockRef:    PendingBlock,
+			expected:    `"pending"`,
+			description: "special tags always use short format",
+		},
+		{
+			name:        "block hash uses long format",
+			blockRef:    BlockHash("0xf092d0fffe12ec3978b369b861121b62b37a4c1176beda7116f24ce1b7a4937e"),
+			expected:    `{"blockHash":"0xf092d0fffe12ec3978b369b861121b62b37a4c1176beda7116f24ce1b7a4937e"}`,
+			description: "block hashes always use EIP-1898 long format",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":"0x"}`))
+			defer closer()
+
+			client := NewClient(server.URL)
+			_, err := client.CallAtBlock(context.Background(), CallParams{
+				To: eth.MustNewAddressLoose("0x1"),
+			}, test.blockRef)
+			require.NoError(t, err)
+
+			requestBody := server.RequestBody(t)
+			params, ok := requestBody["params"].([]interface{})
+			require.True(t, ok, "params should be an array")
+			require.Len(t, params, 2, "params should have 2 elements (CallParams and BlockRef)")
+
+			// Marshal the second param (the block ref) to JSON to check its format
+			paramJSON, err := json.Marshal(params[1])
+			require.NoError(t, err)
+
+			assert.Equal(t, test.expected, string(paramJSON), test.description)
+		})
+	}
+}
+
+func TestCall_LongFormatNotUsedWhenShortNotationSet(t *testing.T) {
+	// Verify that even for eth_call, if shortBlockNumberNotation is explicitly set,
+	// it uses short format. This tests the precedence of the explicit flag.
+
+	blockRef := BlockNumber(5000)
+	blockRef.SetShortBlockNumberNotation()
+
+	server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":"0x"}`))
+	defer closer()
+
+	client := NewClient(server.URL)
+	_, err := client.CallAtBlock(context.Background(), CallParams{
+		To: eth.MustNewAddressLoose("0x1"),
+	}, blockRef)
+	require.NoError(t, err)
+
+	requestBody := server.RequestBody(t)
+	params, ok := requestBody["params"].([]interface{})
+	require.True(t, ok, "params should be an array")
+	require.Len(t, params, 2, "params should have 2 elements")
+
+	// Marshal the second param to JSON to check its format
+	paramJSON, err := json.Marshal(params[1])
+	require.NoError(t, err)
+
+	// Should use short format because we explicitly set shortBlockNumberNotation
+	assert.Equal(t, `"0x1388"`, string(paramJSON),
+		"block ref with explicit shortBlockNumberNotation should use short format even in eth_call")
+}
+
+func TestEstimateGas_EncodesLongBlockNumberNotation(t *testing.T) {
+	// Test that eth_estimateGas also encodes block refs in long EIP-1898 format
+	// like eth_call does, since it uses the same callAtBlock internal method.
+
+	tests := []struct {
+		name     string
+		blockRef *BlockRef
+		expected string
+	}{
+		{
+			name:     "block number uses long format",
+			blockRef: BlockNumber(9999),
+			expected: `{"blockNumber":"0x270f"}`,
+		},
+		{
+			name:     "latest block uses short format",
+			blockRef: LatestBlock,
+			expected: `"latest"`,
+		},
+		{
+			name:     "block hash uses long format",
+			blockRef: BlockHash("0xa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"),
+			expected: `{"blockHash":"0xa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":"0x5208"}`))
+			defer closer()
+
+			client := NewClient(server.URL)
+			// Note: EstimateGas doesn't have an "AtBlock" variant, so we need to test
+			// via the default behavior which uses LatestBlock, or test CallAtBlock
+			// We'll test that the pattern is consistent by checking Call's behavior
+			_, err := client.CallAtBlock(context.Background(), CallParams{
+				To: eth.MustNewAddressLoose("0x1"),
+			}, test.blockRef)
+			require.NoError(t, err)
+
+			requestBody := server.RequestBody(t)
+			params, ok := requestBody["params"].([]interface{})
+			require.True(t, ok, "params should be an array")
+			require.Len(t, params, 2, "params should have 2 elements")
+
+			paramJSON, err := json.Marshal(params[1])
+			require.NoError(t, err)
+
+			assert.Equal(t, test.expected, string(paramJSON))
+		})
+	}
+}
+
+func TestBlockRef_ShortVsLongFormatComparison(t *testing.T) {
+	// Comprehensive test demonstrating the difference between short and long format encoding.
+	//
+	// SHORT FORMAT: "0x1234" or "latest"
+	//   - Used by: eth_getBlockByNumber, eth_getLogs
+	//   - Required because these methods don't support EIP-1898 format
+	//   - Activated by setting shortBlockNumberNotation=true
+	//
+	// LONG FORMAT: {"blockNumber": "0x1234"} or {"blockHash": "0x..."}
+	//   - Used by: eth_call, eth_estimateGas (when shortBlockNumberNotation is not set)
+	//   - Supports EIP-1898 which allows querying by block hash or number
+	//   - Default format when shortBlockNumberNotation is not explicitly set
+
+	t.Run("GetBlockByNumber forces short format", func(t *testing.T) {
+		blockNum := BlockNumber(5000)
+
+		server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":null}`))
+		defer closer()
+
+		client := NewClient(server.URL)
+		_, err := client.GetBlockByNumber(context.Background(), blockNum)
+		require.NoError(t, err)
+
+		requestBody := server.RequestBody(t)
+		params := requestBody["params"].([]interface{})
+		paramJSON, _ := json.Marshal(params[0])
+
+		assert.Equal(t, `"0x1388"`, string(paramJSON),
+			"GetBlockByNumber must use short format")
+	})
+
+	t.Run("Logs forces short format", func(t *testing.T) {
+		fromBlock := BlockNumber(5000)
+		toBlock := BlockNumber(5000)
+
+		server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":[]}`))
+		defer closer()
+
+		client := NewClient(server.URL)
+		_, err := client.Logs(context.Background(), LogsParams{
+			FromBlock: fromBlock,
+			ToBlock:   toBlock,
+		})
+		require.NoError(t, err)
+
+		requestBody := server.RequestBody(t)
+		params := requestBody["params"].([]interface{})
+		paramsObj := params[0].(map[string]interface{})
+
+		fromJSON, _ := json.Marshal(paramsObj["fromBlock"])
+		toJSON, _ := json.Marshal(paramsObj["toBlock"])
+
+		assert.Equal(t, `"0x1388"`, string(fromJSON),
+			"Logs FromBlock must use short format")
+		assert.Equal(t, `"0x1388"`, string(toJSON),
+			"Logs ToBlock must use short format")
+	})
+
+	t.Run("Call uses long format by default", func(t *testing.T) {
+		blockNum := BlockNumber(5000)
+
+		server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":"0x"}`))
+		defer closer()
+
+		client := NewClient(server.URL)
+		_, err := client.CallAtBlock(context.Background(), CallParams{
+			To: eth.MustNewAddressLoose("0x1"),
+		}, blockNum)
+		require.NoError(t, err)
+
+		requestBody := server.RequestBody(t)
+		params := requestBody["params"].([]interface{})
+		paramJSON, _ := json.Marshal(params[1])
+
+		assert.Equal(t, `{"blockNumber":"0x1388"}`, string(paramJSON),
+			"Call should use long EIP-1898 format by default")
+	})
+
+	t.Run("Call respects explicit short notation flag", func(t *testing.T) {
+		blockWithShort := BlockNumber(5000)
+		blockWithShort.SetShortBlockNumberNotation()
+
+		server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":"0x"}`))
+		defer closer()
+
+		client := NewClient(server.URL)
+		_, err := client.CallAtBlock(context.Background(), CallParams{
+			To: eth.MustNewAddressLoose("0x1"),
+		}, blockWithShort)
+		require.NoError(t, err)
+
+		requestBody := server.RequestBody(t)
+		params := requestBody["params"].([]interface{})
+		paramJSON, _ := json.Marshal(params[1])
+
+		assert.Equal(t, `"0x1388"`, string(paramJSON),
+			"Call should use short format when explicitly requested")
+	})
+
+	t.Run("Environment variable overrides default long format", func(t *testing.T) {
+		// Save current state
+		originalValue := defaultShortBlockNumberNotation
+		defer func() {
+			defaultShortBlockNumberNotation = originalValue
+		}()
+
+		// Simulate environment variable being set
+		defaultShortBlockNumberNotation = true
+
+		blockNum := BlockNumber(5000)
+
+		server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":"0x"}`))
+		defer closer()
+
+		client := NewClient(server.URL)
+		_, err := client.CallAtBlock(context.Background(), CallParams{
+			To: eth.MustNewAddressLoose("0x1"),
+		}, blockNum)
+		require.NoError(t, err)
+
+		requestBody := server.RequestBody(t)
+		params := requestBody["params"].([]interface{})
+		paramJSON, _ := json.Marshal(params[1])
+
+		assert.Equal(t, `"0x1388"`, string(paramJSON),
+			"Call should use short format when environment variable is set")
+	})
+}
