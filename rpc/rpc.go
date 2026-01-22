@@ -202,18 +202,7 @@ func OneOfTopic(topics ...interface{}) (out TopicFilterExpr) {
 }
 
 func (c *Client) Logs(ctx context.Context, params LogsParams) ([]*LogEntry, error) {
-	result, err := c.DoRequest(ctx, "eth_getLogs", []interface{}{params})
-	if err != nil {
-		return nil, fmt.Errorf("request error: %w", err)
-	}
-
-	var logs []*LogEntry
-	err = json.Unmarshal([]byte(result), &logs)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode logs as JSON: %w", err)
-	}
-
-	return logs, nil
+	return Do[[]*LogEntry](c, ctx, "eth_getLogs", []interface{}{params})
 }
 
 type getBlockOptions struct {
@@ -256,18 +245,7 @@ func (c *Client) getBlock(ctx context.Context, method string, identifier interfa
 		opt.apply(&options)
 	}
 
-	resp, err := c.DoRequest(ctx, method, []interface{}{identifier, options.full})
-	if err != nil {
-		return nil, fmt.Errorf("unable to perform %s request: %w", method, err)
-	}
-
-	var block *Block
-	err = json.Unmarshal([]byte(resp), &block)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode block from JSON: %w", err)
-	}
-
-	return block, nil
+	return Do[*Block](c, ctx, method, []interface{}{identifier, options.full})
 }
 
 func (c *Client) LatestBlockNum(ctx context.Context) (uint64, error) {
@@ -396,22 +374,8 @@ func (c *Client) Syncing(ctx context.Context) (*SyncingResp, error) {
 // TransactionReceipt fetches the receipt associated with the transaction's hash received. If the
 // transaction is not found by the queried node, `nil, nil` is returned. If it's found, the receipt
 // is decoded and `receipt, nil` is returned. Otherwise, the RPC error is returned if something went wrong.
-func (c *Client) TransactionReceipt(ctx context.Context, hash eth.Hash) (out *TransactionReceipt, err error) {
-	resp, err := c.DoRequest(ctx, "eth_getTransactionReceipt", []interface{}{hash})
-	if err != nil {
-		return nil, fmt.Errorf("unable to perform eth_getTransactionCount request: %w", err)
-	}
-
-	if resp == "" {
-		return nil, nil
-	}
-
-	err = json.Unmarshal([]byte(resp), &out)
-	if err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	return out, nil
+func (c *Client) TransactionReceipt(ctx context.Context, hash eth.Hash) (*TransactionReceipt, error) {
+	return Do[*TransactionReceipt](c, ctx, "eth_getTransactionReceipt", []interface{}{hash})
 }
 
 func (c *Client) GetTransactionCount(ctx context.Context, accountAddr eth.Address, at *BlockRef) (uint64, error) {
@@ -670,6 +634,25 @@ func (c *Client) DoRequest(ctx context.Context, method string, params []interfac
 	}
 
 	return results[0].Content, results[0].Err
+}
+
+// Do performs an RPC request and unmarshals the response into the type T.
+// It wraps DoRequest and handles JSON unmarshalling automatically.
+func Do[T any](c *Client, ctx context.Context, method string, params []interface{}) (out T, err error) {
+	result, err := c.DoRequest(ctx, method, params)
+	if err != nil {
+		return out, err
+	}
+
+	if result == "" {
+		return out, nil
+	}
+
+	if err := json.Unmarshal([]byte(result), &out); err != nil {
+		return out, fmt.Errorf("unmarshal %s response: %w", method, err)
+	}
+
+	return out, nil
 }
 
 func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []byte) ([]byte, error) {
