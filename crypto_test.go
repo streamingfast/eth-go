@@ -40,6 +40,80 @@ func TestPrivateKey_Generate63BytesPrivateKey(t *testing.T) {
 	}
 }
 
+func TestNewPrivateKey(t *testing.T) {
+	tests := []struct {
+		name           string
+		in             string
+		expectedString string
+		expectedErr    string
+	}{
+		{
+			name:           "valid hex without prefix",
+			in:             "52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee674",
+			expectedString: "52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee674",
+		},
+		{
+			name:           "valid hex with 0x prefix",
+			in:             "0x52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee674",
+			expectedString: "52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee674",
+		},
+		{
+			name:           "valid hex uppercase with 0x prefix",
+			in:             "0x52E1CC4B9C8B4FC9B202ADF06462BDCC248E170C9ABD56B2ADB84C8D87BEE674",
+			expectedString: "52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee674",
+		},
+		{
+			name:           "key < 32 bytes left padded",
+			in:             "0033752648ef6373b2904568fc7452957b73bbb4f91657735bb53e633513b805",
+			expectedString: "0033752648ef6373b2904568fc7452957b73bbb4f91657735bb53e633513b805",
+		},
+		{
+			name:           "key < 32 bytes left padded with 0x prefix",
+			in:             "0x0033752648ef6373b2904568fc7452957b73bbb4f91657735bb53e633513b805",
+			expectedString: "0033752648ef6373b2904568fc7452957b73bbb4f91657735bb53e633513b805",
+		},
+		{
+			name:        "invalid hex characters",
+			in:          "gg33752648ef6373b2904568fc7452957b73bbb4f91657735bb53e633513b805",
+			expectedErr: "invalid private key",
+		},
+		{
+			name:        "too short",
+			in:          "52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee6",
+			expectedErr: "not enough bytes",
+		},
+		{
+			name:        "too long",
+			in:          "52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee67400",
+			expectedErr: "not enough bytes",
+		},
+		{
+			name:        "empty string",
+			in:          "",
+			expectedErr: "not enough bytes",
+		},
+		{
+			name:        "only 0x prefix",
+			in:          "0x",
+			expectedErr: "not enough bytes",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actual, err := NewPrivateKey(test.in)
+			if test.expectedErr == "" {
+				require.NoError(t, err)
+				require.NotNil(t, actual, "invalid private for input %q", test.in)
+				assert.Equal(t, test.expectedString, actual.String())
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.expectedErr)
+			}
+		})
+	}
+}
+
 func TestPrivateKey_String(t *testing.T) {
 	tests := []struct {
 		in          string

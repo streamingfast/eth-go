@@ -66,9 +66,9 @@ func NewRandomPrivateKey() (*PrivateKey, error) {
 }
 
 func NewPrivateKey(rawPrivateKey string) (*PrivateKey, error) {
-	keyBytes, err := hex.DecodeString(rawPrivateKey)
+	keyBytes, err := newByteSlice("private key", rawPrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid key: %w", err)
+		return nil, err
 	}
 
 	return privateKeyFromRawBytes(keyBytes)
