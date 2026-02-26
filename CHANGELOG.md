@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed `Uint256.MarshalText()` to return hex-encoded strings (e.g., `0x1234...`) instead of decimal strings, matching Ethereum conventions and the behavior of `MarshalJSONRPC()`.
+
 - Fixed `rpc.Do[T]` failing when `T` is `string`. The function now returns the raw result string directly without attempting JSON unmarshal for string types, since `DoRequest` already returns the unquoted string value.
 
 - Fixed function selector (method ID) computation for nested tuples. Previously, nested tuples in function signatures were not recursively expanded, causing the literal string `"tuple"` to be used instead of the expanded type signature. For example, a function with a `SignedRAV` parameter containing a nested `RAV` tuple would incorrectly produce `recoverRAVSigner((tuple,bytes))` instead of the correct `recoverRAVSigner(((bytes32,address,address,address,uint64,uint128,bytes),bytes))`. This caused incorrect function selectors to be computed, leading to contract call failures.
@@ -79,5 +81,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Added `out of gas` and `Out of gas` as deterministic error (with the constraint that all provider of `eth_call` used have a `gasCap` configured >= than `gasLimit` used for a call, which should be fixed).
 
 - `LogEventDef.LogID()` is now exposed publicly
+
+- Added `NewPrivateKeyFromECDSA(*ecdsa.PrivateKey)` to create an eth-go PrivateKey from a standard library ecdsa.PrivateKey, enabling integration with existing ECDSA key infrastructure.
+
+- Added `(*PrivateKey).ToECDSA()` to convert an eth-go PrivateKey to a standard library ecdsa.PrivateKey for use with standard crypto/ecdsa functions.
+
+- Added `Signature.RBytes()` method that returns the R component of a signature as a 32-byte array, complementing the existing `R() *big.Int` method.
+
+- Added `Signature.SBytes()` method that returns the S component of a signature as a 32-byte array, complementing the existing `S() *big.Int` method.
+
+- Added `NewSignatureFromComponents(v byte, r, s [32]byte)` to construct a Signature from individual V, R, S components, useful when signature components are stored separately (e.g., in protobuf messages or database schemas).
 
 [unreleased]: https://github.com/streamingfast/eth-go

@@ -90,7 +90,7 @@ func (b *Uint256) UnmarshalText(text []byte) error {
 }
 
 func (b *Uint256) MarshalText() ([]byte, error) {
-	return (*uint256.Int)(b).MarshalText()
+	return []byte((*uint256.Int)(b).Hex()), nil
 }
 
 func (b *Uint256) MarshalJSONRPC() ([]byte, error) {
