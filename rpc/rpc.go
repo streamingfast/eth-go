@@ -381,6 +381,15 @@ func (c *Client) TransactionReceipt(ctx context.Context, hash eth.Hash) (*Transa
 	return Do[*TransactionReceipt](c, ctx, "eth_getTransactionReceipt", []interface{}{hash})
 }
 
+// BlockReceipts fetches all transaction receipts for a given block in a single call using eth_getBlockReceipts.
+// The blockRef parameter accepts a block number or tag reference (use [BlockNumber], [BlockHash], [LatestBlock], etc.).
+// Returns a slice of receipts in transaction order.
+// If the method is not supported by the node, an error is returned.
+func (c *Client) BlockReceipts(ctx context.Context, blockRef *BlockRef) ([]*TransactionReceipt, error) {
+	blockRef.shortBlockNumberNotation = true // this does not support long `{"blockNumber": 1234}` format
+	return Do[[]*TransactionReceipt](c, ctx, "eth_getBlockReceipts", []interface{}{blockRef})
+}
+
 func (c *Client) GetTransactionCount(ctx context.Context, accountAddr eth.Address, at *BlockRef) (uint64, error) {
 	return c.Nonce(ctx, accountAddr, at)
 }
