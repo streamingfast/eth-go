@@ -63,6 +63,7 @@ var RETH_DETERMINISTIC_ERRORS = []string{
 	"invalidjump",
 	"opcodenotfound",
 	"stackoverflow",
+	"stackunderflow",
 	"outofgas",
 	"invalidfeopcode",
 }
