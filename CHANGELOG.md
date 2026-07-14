@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **Breaking** `eth.NewAddress` is now strict in argument it accepts, the received input must have exactly 20 bytes once decoded. You can find back the previous behavior by using `NewAddressLoose` that has been added.
 
-- JSON-RPC code `-32602` is now treated as a deterministic error.
+- JSON-RPC code `-32602` is now treated as a deterministic error, except when the message indicates state/block unavailability (see `NON_DETERMINISTIC_STATE_MESSAGES` in the Fixed section).
 
 - **Breaking** The `ABI` has changed so that multiple events/functions of the name or same id are parsed correctly, in order defined.
 
@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - _Deprecated_ `ABI#FindFunction` replaced with `ABI#FindFunctionByHash`.
 
 ### Fixed
+
+- Fixed `rpc.IsGenericDeterministicError` (and thus `rpc.IsDeterministicError`) misclassifying `-32602` state/block unavailability errors (e.g. `Block requested not found ... historical state that is not available`, `missing trie node`) as deterministic. These are transient, node-capability dependent conditions (pruned node) that an archive node answers correctly, so they must not be cached permanently. A new `rpc.NON_DETERMINISTIC_STATE_MESSAGES` list excludes them.
 
 - Fixed `Uint256.MarshalText()` to return hex-encoded strings (e.g., `0x1234...`) instead of decimal strings, matching Ethereum conventions and the behavior of `MarshalJSONRPC()`.
 

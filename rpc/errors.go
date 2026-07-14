@@ -44,6 +44,19 @@ func (e *ErrResponse) Error() string {
 const JSON_RPC_INVALID_REQUEST_ERROR = -32600
 const JSON_RPC_INVALID_ARGUMENT_ERROR = -32602
 
+// NON_DETERMINISTIC_STATE_MESSAGES holds (lower-cased) substrings that some nodes
+// report under the generic `-32602`/`-32600` codes but which are actually transient,
+// node-capability dependent conditions rather than a property of the call itself. A
+// pruned node returns these for state/blocks it no longer holds, while an archive node
+// (or the same node at a different time) answers the exact same call correctly. They
+// must therefore NOT be treated as deterministic, otherwise consumers caching on the
+// error would poison the entry permanently.
+var NON_DETERMINISTIC_STATE_MESSAGES = []string{
+	"state is not available",
+	"historical state that is not available",
+	"missing trie node",
+}
+
 var GETH_DETERMINISTIC_ERRORS = []string{
 	"revert",
 	"invalid jump destination",
@@ -99,7 +112,21 @@ func IsDeterministicError(err *ErrResponse) bool {
 }
 
 func IsGenericDeterministicError(err *ErrResponse) bool {
-	return err.Code == JSON_RPC_INVALID_ARGUMENT_ERROR || err.Code == JSON_RPC_INVALID_REQUEST_ERROR
+	if err.Code != JSON_RPC_INVALID_ARGUMENT_ERROR && err.Code != JSON_RPC_INVALID_REQUEST_ERROR {
+		return false
+	}
+
+	// Some nodes reuse the generic `-32602`/`-32600` codes for state/block unavailability,
+	// which is a node-state condition (pruned data) and not a property of the call. Exclude
+	// those so they are not permanently cached as deterministic by consumers.
+	msg := strings.ToLower(err.Message)
+	for _, stateMsg := range NON_DETERMINISTIC_STATE_MESSAGES {
+		if strings.Contains(msg, stateMsg) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func IsGethDeterministicError(err *ErrResponse) bool {
