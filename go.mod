@@ -9,7 +9,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/holiman/uint256 v1.3.2
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/streamingfast/logging v0.0.0-20220405224725-2755dab2ce75
+	github.com/streamingfast/logging v1.2.1
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/gjson v1.14.1
 	go.uber.org/zap v1.21.0
@@ -31,6 +31,7 @@ require (
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

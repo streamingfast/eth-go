@@ -20,6 +20,7 @@ import (
 
 	"github.com/streamingfast/eth-go"
 	"github.com/streamingfast/eth-go/rlp"
+	"github.com/streamingfast/logging/zapx"
 	"go.uber.org/zap"
 )
 
@@ -84,8 +85,8 @@ func (p *PrivateKeySigner) TransactionSignature(nonce uint64, to []byte, value *
 		zap.Stringer("value", value),
 		zap.Uint64("gas_limit", gasLimit),
 		zap.Stringer("gas_price", gasPrice),
-		zap.Stringer("trx_data", eth.Hex(trxData)),
 		zap.Stringer("chain_id", p.chainID),
+		zapx.TruncatedStringer("trx_data", eth.Hex(trxData), 128),
 	)
 
 	data, err := rlp.Encode([]interface{}{
