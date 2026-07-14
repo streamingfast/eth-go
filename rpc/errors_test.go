@@ -37,6 +37,24 @@ func TestIsDeterministicError(t *testing.T) {
 			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "Invalid argument"},
 			expected: true,
 		},
+		// -32602 with state/block unavailability messages must NOT be deterministic
+		{
+			// Exact error observed in production from Monad RPC. It is transient/node-state
+			// dependent (pruned node), so it must never be cached as deterministic.
+			name:     "invalid argument block requested not found (historical state)",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "Block requested not found. Request might be querying historical state that is not available. If possible, reformulate query to point to more recent blocks"},
+			expected: false,
+		},
+		{
+			name:     "invalid argument state is not available",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "state is not available for block 0x1234"},
+			expected: false,
+		},
+		{
+			name:     "invalid argument missing trie node",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "missing trie node 0xabc (path ) state 0xdef is not available"},
+			expected: false,
+		},
 		// Geth deterministic errors
 		{
 			name:     "geth revert error",
@@ -170,6 +188,32 @@ func TestIsGenericDeterministicError(t *testing.T) {
 		{
 			name:     "invalid argument error",
 			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "Invalid argument"},
+			expected: true,
+		},
+		{
+			name:     "invalid argument revert still deterministic",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "execution reverted"},
+			expected: true,
+		},
+		{
+			// Exact error observed in production from Monad RPC.
+			name:     "invalid argument block requested not found is not deterministic",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "Block requested not found. Request might be querying historical state that is not available. If possible, reformulate query to point to more recent blocks"},
+			expected: false,
+		},
+		{
+			name:     "invalid argument state is not available is not deterministic",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "state is not available for block 0x1234"},
+			expected: false,
+		},
+		{
+			name:     "invalid argument missing trie node is not deterministic",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_ARGUMENT_ERROR, Message: "missing trie node 0xabc"},
+			expected: false,
+		},
+		{
+			name:     "invalid request unaffected by state guard",
+			err:      &ErrResponse{Code: JSON_RPC_INVALID_REQUEST_ERROR, Message: "Invalid request"},
 			expected: true,
 		},
 		{
