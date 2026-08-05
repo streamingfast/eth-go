@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added the standard JSON-RPC 2.0 error codes to the `rpc` package, typed as `rpc.ErrorCode`: `rpc.ErrorCodeParseError` (`-32700`), `rpc.ErrorCodeInvalidRequest` (`-32600`), `rpc.ErrorCodeMethodNotFound` (`-32601`), `rpc.ErrorCodeInvalidParams` (`-32602`), `rpc.ErrorCodeInternalError` (`-32603`) as well as `rpc.ErrorCodeServerError` (`-32000`) for the implementation defined case where the call reached a handler and the handler itself failed.
+
+  The pre-existing `rpc.JSON_RPC_INVALID_REQUEST_ERROR` and `rpc.JSON_RPC_INVALID_ARGUMENT_ERROR` constants are unchanged and keep working, `rpc.ErrorCodeInvalidRequest` and `rpc.ErrorCodeInvalidParams` are the preferred spelling in new code.
+
+- Added `rpc.ErrResponse` constructors so a JSON-RPC server can build errors without assembling a struct literal, the message being formatted according to `fmt.Sprintf` rules: `rpc.NewErrResponse(code, format, args...)`, `rpc.NewParseError`, `rpc.NewInvalidRequestError`, `rpc.NewMethodNotFoundError`, `rpc.NewInvalidParamsError`, `rpc.NewInternalError` and `rpc.NewServerError`.
+
 ### Changed
 
 - **Breaking** `eth.MustNewAddress` is now strict in argument it accepts, the received input must have exactly 20 bytes once decoded. You can find back the previous behavior by using `MustNewAddressLoose` that has been added.

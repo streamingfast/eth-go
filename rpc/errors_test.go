@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsDeterministicError(t *testing.T) {
@@ -453,6 +454,97 @@ func TestErrorCode_MarshalJSONRPC(t *testing.T) {
 			result, err := test.code.MarshalJSONRPC()
 			assert.NoError(t, err)
 			assert.Equal(t, test.expected, string(result))
+		})
+	}
+}
+
+// TestStandardErrorCode_MarshalJSONRPC pins the property that makes those codes usable
+// on the server side: they must render as plain decimal JSON numbers and **not** as an
+// Ethereum hexadecimal quantity like every other numeric value of the JSON-RPC payload.
+func TestStandardErrorCode_MarshalJSONRPC(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     ErrorCode
+		expected string
+	}{
+		{name: "parse error", code: ErrorCodeParseError, expected: "-32700"},
+		{name: "invalid request", code: ErrorCodeInvalidRequest, expected: "-32600"},
+		{name: "method not found", code: ErrorCodeMethodNotFound, expected: "-32601"},
+		{name: "invalid params", code: ErrorCodeInvalidParams, expected: "-32602"},
+		{name: "internal error", code: ErrorCodeInternalError, expected: "-32603"},
+		{name: "server error", code: ErrorCodeServerError, expected: "-32000"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := test.code.MarshalJSONRPC()
+			require.NoError(t, err)
+			assert.Equal(t, test.expected, string(result))
+
+			// Also through the full response object, which is what a server actually writes out
+			out, err := MarshalJSONRPC(&ErrResponse{Code: test.code, Message: "some message"})
+			require.NoError(t, err)
+			assert.Equal(t, `{"code":`+test.expected+`,"message":"some message"}`, string(out))
+		})
+	}
+}
+
+func TestLegacyErrorCodeConstants(t *testing.T) {
+	assert.Equal(t, ErrorCodeInvalidRequest, ErrorCode(JSON_RPC_INVALID_REQUEST_ERROR))
+	assert.Equal(t, ErrorCodeInvalidParams, ErrorCode(JSON_RPC_INVALID_ARGUMENT_ERROR))
+}
+
+func TestNewErrResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		actual   *ErrResponse
+		expected *ErrResponse
+	}{
+		{
+			name:     "generic constructor",
+			actual:   NewErrResponse(ErrorCodeInternalError, "database is %s", "down"),
+			expected: &ErrResponse{Code: ErrorCodeInternalError, Message: "database is down"},
+		},
+		{
+			name:     "generic constructor without arguments",
+			actual:   NewErrResponse(ErrorCodeInternalError, "database is down"),
+			expected: &ErrResponse{Code: ErrorCodeInternalError, Message: "database is down"},
+		},
+		{
+			name:     "parse error",
+			actual:   NewParseError("unexpected token at %d", 12),
+			expected: &ErrResponse{Code: ErrorCodeParseError, Message: "unexpected token at 12"},
+		},
+		{
+			name:     "invalid request",
+			actual:   NewInvalidRequestError("missing %q field", "method"),
+			expected: &ErrResponse{Code: ErrorCodeInvalidRequest, Message: `missing "method" field`},
+		},
+		{
+			name:     "method not found",
+			actual:   NewMethodNotFoundError("unknown method %q", "eth_unknown"),
+			expected: &ErrResponse{Code: ErrorCodeMethodNotFound, Message: `unknown method "eth_unknown"`},
+		},
+		{
+			name:     "invalid params",
+			actual:   NewInvalidParamsError("invalid 'to' address: %s", "not an hex string"),
+			expected: &ErrResponse{Code: ErrorCodeInvalidParams, Message: "invalid 'to' address: not an hex string"},
+		},
+		{
+			name:     "internal error",
+			actual:   NewInternalError("unable to reach %s", "upstream"),
+			expected: &ErrResponse{Code: ErrorCodeInternalError, Message: "unable to reach upstream"},
+		},
+		{
+			name:     "server error",
+			actual:   NewServerError("execution failed: %s", "out of gas"),
+			expected: &ErrResponse{Code: ErrorCodeServerError, Message: "execution failed: out of gas"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, test.actual)
 		})
 	}
 }
