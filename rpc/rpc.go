@@ -83,20 +83,20 @@ func WithNumericID(useNumericID bool) Option {
 type LogsParams struct {
 	// FromBlock is either block number encoded as a hexadecimal or tagged value which is one of
 	// "latest" (`rpc.LatestBlock`), "pending" (`rpc.PendingBlock`) or "earliest" tags (`rpc.EarliestBlock`) (optional).
-	FromBlock *BlockRef `json:"fromBlock,omitempty"`
+	FromBlock *BlockRef `json:"fromBlock,omitzero,omitempty"`
 
 	// ToBlock is either block number encoded as a hexadecimal or tagged value which is one of
 	// "latest" (`LatestBlock`), "pending" (`rpc.PendingBlock`) or "earliest" tags (`EarliestBlock`) (optional).
-	ToBlock *BlockRef `json:"toBlock,omitempty"`
+	ToBlock *BlockRef `json:"toBlock,omitzero,omitempty"`
 
 	// Address is the contract address or a list of addresses from which logs should originate (optional).
-	Address eth.Address `json:"address,omitempty"`
+	Address eth.Address `json:"address,omitzero,omitempty"`
 
 	// Topics are order-dependent, each topic can also be an array of DATA with "or" options (optional).
-	Topics *TopicFilter `json:"topics,omitempty"`
+	Topics *TopicFilter `json:"topics,omitzero,omitempty"`
 
 	// BlockHash is the block hash encoded as a hex string with prefix '0x'
-	BlockHash eth.Bytes `json:"blockHash,omitempty"`
+	BlockHash eth.Bytes `json:"blockHash,omitzero,omitempty"`
 }
 
 type TopicFilter struct {
@@ -284,17 +284,17 @@ func (c *Client) FinalizeBlockNum(ctx context.Context) (uint64, error) {
 
 type CallParams struct {
 	// From the address the transaction is sent from (optional).
-	From eth.Address `json:"from,omitempty"`
+	From eth.Address `json:"from,omitzero,omitempty"`
 	// To the address the transaction is directed to (required).
-	To eth.Address `json:"to,omitempty"`
+	To eth.Address `json:"to,omitzero,omitempty"`
 	// GasLimit Integer of the gas provided for the transaction execution. eth_call consumes zero gas, but this parameter may be needed by some executions (optional).
-	GasLimit uint64 `json:"gas,omitempty"`
+	GasLimit uint64 `json:"gas,omitzero,omitempty"`
 	// GasPrice big integer of the gasPrice used for each paid gas (optional).
-	GasPrice *big.Int `json:"gasPrice,omitempty"`
+	GasPrice *big.Int `json:"gasPrice,omitzero,omitempty"`
 	// Value big integer of the value sent with this transaction (optional).
-	Value *big.Int `json:"value,omitempty"`
+	Value *big.Int `json:"value,omitzero,omitempty"`
 	// Hash of the method signature and encoded parameters or any object that implements `MarshalJSONRPC` and serialize to a byte array, for details see Ethereum Contract ABI in the Solidity documentation (optional).
-	Data interface{} `json:"data,omitempty"`
+	Data interface{} `json:"data,omitzero,omitempty"`
 }
 
 func (c *Client) Call(ctx context.Context, params CallParams) (string, error) {

@@ -6,7 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `rpc.MarshalJSONRPC` and `rpc.MarshalJSONRPCWithOpts` now accept `encoding/json/v2` and `encoding/json/jsontext` options, so callers can tune encoding without leaving the JSON-RPC rules behind, e.g. `rpc.MarshalJSONRPC(v, jsontext.WithIndent("  "))`.
+
+- `rpc.Marshalers(useNumericID bool)` exposes the JSON-RPC type-specific marshalers so callers can layer their own on top: `json.WithMarshalers(json.JoinMarshalers(mine, rpc.Marshalers(false)))`.
+
+- `rpc.Options`, an alias of `encoding/json/v2`'s option type, so callers do not have to import json/v2 to pass one.
+
+- `eth.Bytes`, `eth.Hex`, `eth.Hash` and `eth.Address` gained an `IsZero() bool` method, which makes the `omitzero` struct tag option drop empty values the way `omitempty` did under `encoding/json` v1.
+
 ### Changed
+
+- **Breaking** The minimum Go version is now 1.27, required by `encoding/json/v2`.
+
+- The JSON-RPC marshaller is now built on `encoding/json/v2` instead of a vendored, hand-maintained fork of the `encoding/json` v1 encoder, removing about 3200 lines of copied standard library code. The encoded output is unchanged: a golden corpus covering integers, `big.Int`, byte slices and arrays, `MarshalJSONRPC` precedence, `omitempty`, map ordering, HTML and U+2028/U+2029 escaping, and both request `id` modes is byte-for-byte identical to what the fork produced, apart from the two deliberate deviations noted below. Marshalling a batch of 20 `eth_call` requests is about twice as slow as before (~41µs vs ~20µs, 452 vs 221 allocations); json/v2 allocates when dispatching to a marshaler registered against an interface type. Response decoding is untouched.
+
+- **Breaking** `rpc.MarshalJSONRPCIndent` and `rpc.Indent` now return an error when `prefix` or `indent` contains anything other than spaces and tabs, which `jsontext` rejects. The fork emitted such strings verbatim.
+
+- U+2028 and U+2029 are no longer escaped inside JSON strings. `encoding/json` v1, and so the vendored fork, escaped them so JSON could be embedded in a `<script>` tag before ES2019 made both characters legal in JavaScript string literals; json/v2 leaves them as raw UTF-8 and this package now follows it. Both forms are valid JSON that every parser reads identically, and neither character can occur in a hex quantity, a hex byte string, a method name or a block tag.
+
+- **Breaking** Struct tags in the `rpc` package changed from `omitempty` to `omitzero,omitempty`. Under json/v2, `omitempty` omits a field whose *encoded* form is empty, so a zero integer serialized as `"0x0"` would no longer be dropped. Callers with their own structs marshalled through `rpc.MarshalJSONRPC` should make the same change.
 
 - **Breaking** `eth.MustNewAddress` is now strict in argument it accepts, the received input must have exactly 20 bytes once decoded. You can find back the previous behavior by using `MustNewAddressLoose` that has been added.
 
@@ -18,11 +38,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Deprecated
 
+- _Deprecated_ `rpc.Compact`, `rpc.Indent`, `rpc.Valid`, `rpc.HTMLEscape`, `rpc.Encoder`, `rpc.NewEncoder`, `rpc.RawMessage`, `rpc.SyntaxError` and `rpc.Marshaler`. These were re-exports of the vendored fork and are now thin wrappers over `encoding/json/v2` and `encoding/json/jsontext`; use those packages directly.
+
 - _Deprecated_ `ABI#FindLog` replaced with `ABI#FindLogByTopic`.
 
 - _Deprecated_ `ABI#FindFunction` replaced with `ABI#FindFunctionByHash`.
 
+### Removed
+
+- **Breaking** `rpc.UnsupportedTypeError`, `rpc.UnsupportedValueError`, `rpc.InvalidUTF8Error` and `rpc.MarshalerError`. They were only ever returned by the vendored fork; json/v2 reports marshalling failures as `*json.SemanticError` and `*jsontext.SyntacticError`.
+
 ### Fixed
+
+- Fixed `eth.Int` rejecting any value outside the `int8` range when unmarshalled from text. It parsed with a bit size of 8 rather than the platform `int` size, so `0x1ff` failed with "value out of range".
+
+- Fixed the encoding of negative integers and `big.Int` values, which came out as `"0x-ff"` — a form no JSON-RPC node accepts and that no other implementation produces. They now use `"-0xff"`, the spelling `go-ethereum`'s `hexutil.EncodeBig` uses. `eth`'s integer parsing reads that form back, and still accepts the old one. Note that the JSON-RPC spec has no negative `QUANTITY` at all, so this only settles which form a caller passing a negative value gets.
 
 - Fixed `Uint256.MarshalText()` to return hex-encoded strings (e.g., `0x1234...`) instead of decimal strings, matching Ethereum conventions and the behavior of `MarshalJSONRPC()`.
 

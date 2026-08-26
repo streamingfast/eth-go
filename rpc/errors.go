@@ -29,7 +29,7 @@ func (c ErrorCode) MarshalJSONRPC() ([]byte, error) {
 type ErrResponse struct {
 	Code    ErrorCode   `json:"code"`
 	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
+	Data    interface{} `json:"data,omitzero,omitempty"`
 }
 
 func (e *ErrResponse) Error() string {

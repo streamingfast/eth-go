@@ -1,8 +1,6 @@
 module github.com/streamingfast/eth-go
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.27.0
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
