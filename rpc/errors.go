@@ -36,13 +36,99 @@ func (e *ErrResponse) Error() string {
 	return fmt.Sprintf("rpc error (code %d): %s", e.Code, e.Message)
 }
 
+// The standard JSON-RPC 2.0 error codes, see https://www.jsonrpc.org/specification#error_object.
+//
+// The `-32768` to `-32000` range is reserved for pre-defined errors. Of the `-32099` to `-32000`
+// implementation defined sub-range, we name only [ErrorCodeServerError] which is the de-facto
+// code used by Ethereum nodes when the call reached a handler and the handler itself failed, as
+// opposed to something being wrong with the request.
+const (
+	// ErrorCodeParseError means invalid JSON was received, the JSON received could not be parsed.
+	ErrorCodeParseError ErrorCode = -32700
+
+	// ErrorCodeInvalidRequest means the JSON sent is not a valid Request object.
+	ErrorCodeInvalidRequest ErrorCode = -32600
+
+	// ErrorCodeMethodNotFound means the method does not exist or is not available.
+	ErrorCodeMethodNotFound ErrorCode = -32601
+
+	// ErrorCodeInvalidParams means the method parameter(s) are invalid.
+	ErrorCodeInvalidParams ErrorCode = -32602
+
+	// ErrorCodeInternalError means an internal JSON-RPC error occurred.
+	ErrorCodeInternalError ErrorCode = -32603
+
+	// ErrorCodeServerError means the call reached a handler and the handler itself failed.
+	ErrorCodeServerError ErrorCode = -32000
+)
+
+// NewErrResponse creates an [ErrResponse] with the received code, the message being
+// formatted according to [fmt.Sprintf] rules.
+func NewErrResponse(code ErrorCode, format string, args ...any) *ErrResponse {
+	return &ErrResponse{Code: code, Message: fmt.Sprintf(format, args...)}
+}
+
+// NewParseError creates an [ErrResponse] with code [ErrorCodeParseError], the message
+// being formatted according to [fmt.Sprintf] rules.
+func NewParseError(format string, args ...any) *ErrResponse {
+	return NewErrResponse(ErrorCodeParseError, format, args...)
+}
+
+// NewInvalidRequestError creates an [ErrResponse] with code [ErrorCodeInvalidRequest], the
+// message being formatted according to [fmt.Sprintf] rules.
+func NewInvalidRequestError(format string, args ...any) *ErrResponse {
+	return NewErrResponse(ErrorCodeInvalidRequest, format, args...)
+}
+
+// NewMethodNotFoundError creates an [ErrResponse] with code [ErrorCodeMethodNotFound], the
+// message being formatted according to [fmt.Sprintf] rules.
+func NewMethodNotFoundError(format string, args ...any) *ErrResponse {
+	return NewErrResponse(ErrorCodeMethodNotFound, format, args...)
+}
+
+// NewInvalidParamsError creates an [ErrResponse] with code [ErrorCodeInvalidParams], the
+// message being formatted according to [fmt.Sprintf] rules.
+func NewInvalidParamsError(format string, args ...any) *ErrResponse {
+	return NewErrResponse(ErrorCodeInvalidParams, format, args...)
+}
+
+// NewInternalError creates an [ErrResponse] with code [ErrorCodeInternalError], the message
+// being formatted according to [fmt.Sprintf] rules.
+func NewInternalError(format string, args ...any) *ErrResponse {
+	return NewErrResponse(ErrorCodeInternalError, format, args...)
+}
+
+// NewServerError creates an [ErrResponse] with code [ErrorCodeServerError], the message
+// being formatted according to [fmt.Sprintf] rules.
+func NewServerError(format string, args ...any) *ErrResponse {
+	return NewErrResponse(ErrorCodeServerError, format, args...)
+}
+
 // Try to check if the call was reverted. The JSON-RPC response for reverts is
 // not standardized, so we have ad-hoc checks for each of Geth, Parity and
 // Ganache.
 // These come from https://github.com/graphprotocol/graph-node/blob/94e93b07554d6e77aa618ac2f0716b70e0af671c/chain/ethereum/src/ethereum_adapter.rs#L500
 
+// JSON_RPC_INVALID_REQUEST_ERROR is [ErrorCodeInvalidRequest], kept as an untyped constant
+// so existing usages keep compiling, prefer [ErrorCodeInvalidRequest] in new code.
 const JSON_RPC_INVALID_REQUEST_ERROR = -32600
+
+// JSON_RPC_INVALID_ARGUMENT_ERROR is [ErrorCodeInvalidParams], kept as an untyped constant
+// so existing usages keep compiling, prefer [ErrorCodeInvalidParams] in new code.
 const JSON_RPC_INVALID_ARGUMENT_ERROR = -32602
+
+// NON_DETERMINISTIC_STATE_MESSAGES holds (lower-cased) substrings that some nodes
+// report under the generic `-32602`/`-32600` codes but which are actually transient,
+// node-capability dependent conditions rather than a property of the call itself. A
+// pruned node returns these for state/blocks it no longer holds, while an archive node
+// (or the same node at a different time) answers the exact same call correctly. They
+// must therefore NOT be treated as deterministic, otherwise consumers caching on the
+// error would poison the entry permanently.
+var NON_DETERMINISTIC_STATE_MESSAGES = []string{
+	"state is not available",
+	"historical state that is not available",
+	"missing trie node",
+}
 
 var GETH_DETERMINISTIC_ERRORS = []string{
 	"revert",
@@ -99,7 +185,21 @@ func IsDeterministicError(err *ErrResponse) bool {
 }
 
 func IsGenericDeterministicError(err *ErrResponse) bool {
-	return err.Code == JSON_RPC_INVALID_ARGUMENT_ERROR || err.Code == JSON_RPC_INVALID_REQUEST_ERROR
+	if err.Code != JSON_RPC_INVALID_ARGUMENT_ERROR && err.Code != JSON_RPC_INVALID_REQUEST_ERROR {
+		return false
+	}
+
+	// Some nodes reuse the generic `-32602`/`-32600` codes for state/block unavailability,
+	// which is a node-state condition (pruned data) and not a property of the call. Exclude
+	// those so they are not permanently cached as deterministic by consumers.
+	msg := strings.ToLower(err.Message)
+	for _, stateMsg := range NON_DETERMINISTIC_STATE_MESSAGES {
+		if strings.Contains(msg, stateMsg) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func IsGethDeterministicError(err *ErrResponse) bool {

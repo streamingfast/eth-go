@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `eth.Bytes`, `eth.Hex`, `eth.Hash` and `eth.Address` gained an `IsZero() bool` method, which makes the `omitzero` struct tag option drop empty values the way `omitempty` did under `encoding/json` v1.
 
+- Added the standard JSON-RPC 2.0 error codes to the `rpc` package, typed as `rpc.ErrorCode`: `rpc.ErrorCodeParseError` (`-32700`), `rpc.ErrorCodeInvalidRequest` (`-32600`), `rpc.ErrorCodeMethodNotFound` (`-32601`), `rpc.ErrorCodeInvalidParams` (`-32602`), `rpc.ErrorCodeInternalError` (`-32603`) as well as `rpc.ErrorCodeServerError` (`-32000`) for the implementation defined case where the call reached a handler and the handler itself failed.
+
+  The pre-existing `rpc.JSON_RPC_INVALID_REQUEST_ERROR` and `rpc.JSON_RPC_INVALID_ARGUMENT_ERROR` constants are unchanged and keep working, `rpc.ErrorCodeInvalidRequest` and `rpc.ErrorCodeInvalidParams` are the preferred spelling in new code.
+
+- Added `rpc.ErrResponse` constructors so a JSON-RPC server can build errors without assembling a struct literal, the message being formatted according to `fmt.Sprintf` rules: `rpc.NewErrResponse(code, format, args...)`, `rpc.NewParseError`, `rpc.NewInvalidRequestError`, `rpc.NewMethodNotFoundError`, `rpc.NewInvalidParamsError`, `rpc.NewInternalError` and `rpc.NewServerError`.
+
 ### Changed
 
 - **Breaking** The minimum Go version is now 1.27, required by `encoding/json/v2`.
@@ -32,7 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - **Breaking** `eth.NewAddress` is now strict in argument it accepts, the received input must have exactly 20 bytes once decoded. You can find back the previous behavior by using `NewAddressLoose` that has been added.
 
-- JSON-RPC code `-32602` is now treated as a deterministic error.
+- JSON-RPC code `-32602` is now treated as a deterministic error, except when the message indicates state/block unavailability (see `NON_DETERMINISTIC_STATE_MESSAGES` in the Fixed section).
 
 - **Breaking** The `ABI` has changed so that multiple events/functions of the name or same id are parsed correctly, in order defined.
 
@@ -53,6 +59,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fixed `eth.Int` rejecting any value outside the `int8` range when unmarshalled from text. It parsed with a bit size of 8 rather than the platform `int` size, so `0x1ff` failed with "value out of range".
 
 - Fixed the encoding of negative integers and `big.Int` values, which came out as `"0x-ff"` — a form no JSON-RPC node accepts and that no other implementation produces. They now use `"-0xff"`, the spelling `go-ethereum`'s `hexutil.EncodeBig` uses. `eth`'s integer parsing reads that form back, and still accepts the old one. Note that the JSON-RPC spec has no negative `QUANTITY` at all, so this only settles which form a caller passing a negative value gets.
+
+- Fixed `rpc.IsGenericDeterministicError` (and thus `rpc.IsDeterministicError`) misclassifying `-32602` state/block unavailability errors (e.g. `Block requested not found ... historical state that is not available`, `missing trie node`) as deterministic. These are transient, node-capability dependent conditions (pruned node) that an archive node answers correctly, so they must not be cached permanently. A new `rpc.NON_DETERMINISTIC_STATE_MESSAGES` list excludes them.
 
 - Fixed `Uint256.MarshalText()` to return hex-encoded strings (e.g., `0x1234...`) instead of decimal strings, matching Ethereum conventions and the behavior of `MarshalJSONRPC()`.
 
