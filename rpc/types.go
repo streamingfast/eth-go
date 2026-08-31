@@ -321,7 +321,7 @@ type TransactionReceipt struct {
 	// From is the address of the sender.
 	From eth.Address `json:"from"`
 	// To is the address of the receiver, `null` when the transaction is a contract creation transaction.
-	To *eth.Address `json:"to,omitempty"`
+	To *eth.Address `json:"to,omitzero,omitempty"`
 	// CumulativeGasUsed is the the total amount of gas used when this transaction was executed in the block.
 	CumulativeGasUsed eth.Uint64 `json:"cumulativeGasUsed"`
 	// EffectiveGasPrice is the sum of the base fee and tip paid per unit of gas.
@@ -329,7 +329,7 @@ type TransactionReceipt struct {
 	// GasUsed is the the amount of gas used by this specific transaction alone.
 	GasUsed eth.Uint64 `json:"gasUsed"`
 	// ContractAddress is the the contract address created, if the transaction was a contract creation, otherwise - null.
-	ContractAddress *eth.Address `json:"contractAddress,omitempty"`
+	ContractAddress *eth.Address `json:"contractAddress,omitzero,omitempty"`
 	// Logs is the Array of log objects, which this transaction generated.
 	Logs []*LogEntry `json:"logs"`
 	// LogsBloom is the Bloom filter for light clients to quickly retrieve related logs.
@@ -348,7 +348,7 @@ type Transaction struct {
 	// Hash is the hash of the transaction.
 	Hash eth.Hash `json:"hash"`
 
-	Nonce eth.Uint64 `json:"nonce,omitempty"`
+	Nonce eth.Uint64 `json:"nonce,omitzero,omitempty"`
 
 	// BlockHash is the hash of the block where this transaction was in, none when pending.
 	BlockHash eth.Hash `json:"blockHash"`
@@ -375,28 +375,28 @@ type Transaction struct {
 	Gas eth.Uint64 `json:"gas"`
 
 	// Input data the transaction will receive for execution of EVM.
-	Input eth.Hex `json:"input,omitempty"`
+	Input eth.Hex `json:"input,omitzero,omitempty"`
 
 	// V is the ECDSA recovery id of the transaction's signature.
-	V eth.Uint64 `json:"v,omitempty"`
+	V eth.Uint64 `json:"v,omitzero,omitempty"`
 
 	// R is the ECDSA signature R point of transaction's signature.
-	R *eth.Uint256 `json:"r,omitempty"`
+	R *eth.Uint256 `json:"r,omitzero,omitempty"`
 
 	// S is the ECDSA signature S point of transaction's signature.
-	S *eth.Uint256 `json:"s,omitempty"`
+	S *eth.Uint256 `json:"s,omitzero,omitempty"`
 
 	// AccessList is the defined access list tuples when the transaction is of AccessList type (0x01), none when transaction of other types.
-	AccessList AccessList `json:"accessList,omitempty"`
+	AccessList AccessList `json:"accessList,omitzero,omitempty"`
 
 	// ChainID is the identifier chain the transaction was executed in, none if London fork is **not** activated
-	ChainID eth.Uint64 `json:"chainId,omitempty"`
+	ChainID eth.Uint64 `json:"chainId,omitzero,omitempty"`
 
 	// MaxFeePerGas is the identifier chain the transaction was executed in, none if London fork is **not** activated
-	MaxFeePerGas *eth.Uint256 `json:"maxFeePerGas,omitempty"`
+	MaxFeePerGas *eth.Uint256 `json:"maxFeePerGas,omitzero,omitempty"`
 
 	// MaxPriorityFeePerGas is the identifier chain the transaction was executed in, none if London fork is **not** activated
-	MaxPriorityFeePerGas *eth.Uint256 `json:"maxPriorityFeePerGas,omitempty"`
+	MaxPriorityFeePerGas *eth.Uint256 `json:"maxPriorityFeePerGas,omitzero,omitempty"`
 
 	// Type is the transaction's type
 	Type eth.TransactionType `json:"type"`
@@ -423,21 +423,21 @@ type Block struct {
 	Difficulty       *eth.Uint256       `json:"difficulty"`
 	TotalDifficulty  *eth.Uint256       `json:"totalDifficulty"`
 	Miner            eth.Address        `json:"miner"`
-	Nonce            eth.FixedUint64    `json:"nonce,omitempty"`
+	Nonce            eth.FixedUint64    `json:"nonce,omitzero,omitempty"`
 	LogsBloom        eth.Hex            `json:"logsBloom"`
 	ExtraData        eth.Hex            `json:"extraData"`
-	BaseFeePerGas    *eth.Uint256       `json:"baseFeePerGas,omitempty"`
-	BlockSize        eth.Uint64         `json:"size,omitempty"`
-	Transactions     *BlockTransactions `json:"transactions,omitempty"`
-	UnclesSHA3       eth.Hash           `json:"sha3Uncles,omitempty"`
-	Uncles           []eth.Hash         `json:"uncles,omitempty"`
+	BaseFeePerGas    *eth.Uint256       `json:"baseFeePerGas,omitzero,omitempty"`
+	BlockSize        eth.Uint64         `json:"size,omitzero,omitempty"`
+	Transactions     *BlockTransactions `json:"transactions,omitzero,omitempty"`
+	UnclesSHA3       eth.Hash           `json:"sha3Uncles,omitzero,omitempty"`
+	Uncles           []eth.Hash         `json:"uncles,omitzero,omitempty"`
 
-	BlobGasUsed           *eth.Uint64  `json:"blobGasUsed,omitempty"`           // EIP-4844
-	ExcessBlobGas         *eth.Uint64  `json:"excessBlobGas,omitempty"`         // EIP-4844
-	ParentBeaconBlockRoot *eth.Hash    `json:"parentBeaconBlockRoot,omitempty"` // EIP-4844
-	WithdrawalsHash       *eth.Hash    `json:"withdrawalsRoot,omitempty"`       // EIP-4895
-	Withdrawals           []Withdrawal `json:"withdrawals,omitempty"`           // EIP-4895
-	RequestsHash          *eth.Hash    `json:"requestsHash,omitempty"`          // EIP-7685
+	BlobGasUsed           *eth.Uint64  `json:"blobGasUsed,omitzero,omitempty"`           // EIP-4844
+	ExcessBlobGas         *eth.Uint64  `json:"excessBlobGas,omitzero,omitempty"`         // EIP-4844
+	ParentBeaconBlockRoot *eth.Hash    `json:"parentBeaconBlockRoot,omitzero,omitempty"` // EIP-4844
+	WithdrawalsHash       *eth.Hash    `json:"withdrawalsRoot,omitzero,omitempty"`       // EIP-4895
+	Withdrawals           []Withdrawal `json:"withdrawals,omitzero,omitempty"`           // EIP-4895
+	RequestsHash          *eth.Hash    `json:"requestsHash,omitzero,omitempty"`          // EIP-7685
 }
 
 type Withdrawal struct {
@@ -467,10 +467,10 @@ func (txs *BlockTransactions) MarshalJSON() ([]byte, error) {
 }
 
 func (txs *BlockTransactions) MarshalJSONRPC() ([]byte, error) {
-	return txs.marshalJSON(MarshalJSONRPC)
+	return txs.marshalJSON(func(v any) ([]byte, error) { return MarshalJSONRPC(v) })
 }
 
-func (txs *BlockTransactions) marshalJSON(marshaller func(v interface{}) ([]byte, error)) ([]byte, error) {
+func (txs *BlockTransactions) marshalJSON(marshaller func(v any) ([]byte, error)) ([]byte, error) {
 	if len(txs.hashes) == 0 {
 		if len(txs.Transactions) == 0 {
 			return []byte(`[]`), nil

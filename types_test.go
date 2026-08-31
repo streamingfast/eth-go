@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -340,4 +342,107 @@ func topic(in string) (out *Topic) {
 	var bytes [32]byte
 	copy(bytes[:], MustNewHash(in))
 	return (*Topic)(&bytes)
+}
+
+func TestParseInt(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          string
+		bitSize     int
+		expected    int64
+		expectedErr string
+	}{
+		{name: "empty", in: "", bitSize: 64},
+		{name: "hex", in: "0xff", bitSize: 64, expected: 255},
+		{name: "hex uppercase prefix", in: "0Xff", bitSize: 64, expected: 255},
+		{name: "hex prefix only", in: "0x", bitSize: 64},
+		{name: "decimal", in: "255", bitSize: 64, expected: 255},
+		{name: "decimal negative", in: "-255", bitSize: 64, expected: -255},
+
+		// The form MarshalJSONRPC emits, matching go-ethereum's hexutil.
+		{name: "hex negative", in: "-0xff", bitSize: 64, expected: -255},
+		{name: "hex negative uppercase prefix", in: "-0Xff", bitSize: 64, expected: -255},
+
+		// The form this package used to emit, still accepted on input.
+		{name: "hex negative, legacy sign placement", in: "0x-ff", bitSize: 64, expected: -255},
+
+		// The sign is restored before parsing so bounds are checked against the signed
+		// range rather than the unsigned one.
+		{name: "hex int8 lower bound", in: "-0x80", bitSize: 8, expected: -128},
+		{name: "hex int8 upper bound", in: "0x7f", bitSize: 8, expected: 127},
+		{name: "hex int8 overflow", in: "0x80", bitSize: 8, expectedErr: "invalid hex int8 number"},
+
+		{name: "hex int64 lower bound", in: "-0x8000000000000000", bitSize: 64, expected: math.MinInt64},
+		{name: "hex int64 upper bound", in: "0x7fffffffffffffff", bitSize: 64, expected: math.MaxInt64},
+
+		{name: "not a number", in: "0xzz", bitSize: 64, expectedErr: "invalid hex int64 number"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actual, err := parseInt(test.in, test.bitSize)
+			if test.expectedErr != "" {
+				require.ErrorContains(t, err, test.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, test.expected, actual)
+		})
+	}
+}
+
+// TestSignedQuantityRoundTrip checks that what rpc.MarshalJSONRPC writes for a signed value
+// is what parseInt reads back.
+func TestSignedQuantityRoundTrip(t *testing.T) {
+	for _, value := range []int64{0, 1, -1, 255, -255, math.MaxInt64, math.MinInt64} {
+		t.Run(strconv.FormatInt(value, 10), func(t *testing.T) {
+			var number Int64
+			require.NoError(t, number.UnmarshalText([]byte(encodeSignedQuantity(value))))
+
+			assert.Equal(t, value, int64(number))
+		})
+	}
+}
+
+// encodeSignedQuantity mirrors what the rpc package writes, kept here so the eth package
+// does not have to import it.
+func encodeSignedQuantity(value int64) string {
+	magnitude := uint64(value)
+	if value < 0 {
+		return "-0x" + strconv.FormatUint(-magnitude, 16)
+	}
+
+	return "0x" + strconv.FormatUint(magnitude, 16)
+}
+
+// TestIntUnmarshalText covers the full range of Int, which used to be parsed as if it were
+// an Int8 and so rejected anything above 127.
+func TestIntUnmarshalText(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		expected Int
+	}{
+		{name: "zero", in: "0x0", expected: 0},
+		{name: "within int8", in: "0x7f", expected: 127},
+		{name: "past int8", in: "0x1ff", expected: 511},
+		{name: "large", in: "0x7fffffff", expected: 2147483647},
+		{name: "negative past int8", in: "-0x1ff", expected: -511},
+		{name: "decimal", in: "511", expected: 511},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var actual Int
+			require.NoError(t, actual.UnmarshalText([]byte(test.in)))
+
+			assert.Equal(t, test.expected, actual)
+		})
+	}
+
+	t.Run("out of range for int", func(t *testing.T) {
+		var actual Int
+		require.ErrorContains(t, actual.UnmarshalText([]byte("0x1"+strings.Repeat("0", 16))), "out of range")
+	})
 }

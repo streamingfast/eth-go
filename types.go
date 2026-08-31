@@ -181,7 +181,8 @@ func parseUint(text string, bitSize int) (uint64, error) {
 type Int int
 
 func (b *Int) UnmarshalText(text []byte) error {
-	value, err := parseInt(string(text), 8)
+	// strconv.IntSize, not 64, because int is platform sized.
+	value, err := parseInt(string(text), strconv.IntSize)
 	if err != nil {
 		return err
 	}
@@ -243,14 +244,27 @@ func parseInt(text string, bitSize int) (int64, error) {
 		return 0, nil
 	}
 
+	// A negative hexadecimal is written "-0xff", as go-ethereum's hexutil does it.
+	sign := ""
+	if rest, found := strings.CutPrefix(text, "-"); found {
+		sign, text = "-", rest
+	}
+
 	// If it's a hexadecimal string, let's parse it as-is
-	if strings.HasPrefix(text, "0x") || strings.HasPrefix(text, "0X") {
-		text = text[2:]
-		if text == "" {
+	if digits, found := cutHexPrefix(text); found {
+		if digits == "" {
 			return 0, nil
 		}
 
-		value, err := strconv.ParseInt(text, 16, bitSize)
+		// Older versions of this package wrote the sign after the prefix instead, as
+		// "0x-ff". Keep reading that form.
+		if rest, found := strings.CutPrefix(digits, "-"); found {
+			sign, digits = "-", rest
+		}
+
+		// The sign goes back on before parsing so that strconv range-checks against the
+		// signed bounds, where -0x80 fits an int8 but 0x80 does not.
+		value, err := strconv.ParseInt(sign+digits, 16, bitSize)
 		if err != nil {
 			return 0, fmt.Errorf("invalid hex int%d number: %w", bitSize, err)
 		}
@@ -259,12 +273,20 @@ func parseInt(text string, bitSize int) (int64, error) {
 	}
 
 	// Otherwise, we assume it's a decimal number
-	value, err := strconv.ParseInt(text, 10, bitSize)
+	value, err := strconv.ParseInt(sign+text, 10, bitSize)
 	if err != nil {
 		return 0, fmt.Errorf("invalid int%d number: %w", bitSize, err)
 	}
 
 	return value, nil
+}
+
+func cutHexPrefix(text string) (digits string, found bool) {
+	if digits, found = strings.CutPrefix(text, "0x"); found {
+		return digits, true
+	}
+
+	return strings.CutPrefix(text, "0X")
 }
 
 type Bytes []byte
@@ -285,6 +307,7 @@ func NewBytes(input string) (Bytes, error) {
 func (h Bytes) String() string                   { return byteSlice(h).String() }
 func (h Bytes) Pretty() string                   { return byteSlice(h).Pretty() }
 func (h Bytes) Bytes() []byte                    { return h[:] }
+func (h Bytes) IsZero() bool                     { return len(h) == 0 }
 func (h Bytes) MarshalText() ([]byte, error)     { return byteSlice(h).MarshalText() }
 func (h Bytes) ID() uint64                       { return byteSlice(h).ID() }
 func (h Bytes) MarshalJSON() ([]byte, error)     { return byteSlice(h).MarshalJSON() }
@@ -310,6 +333,7 @@ func NewHex(input string) (Hex, error) {
 func (h Hex) String() string                   { return byteSlice(h).String() }
 func (h Hex) Pretty() string                   { return byteSlice(h).Pretty() }
 func (h Hex) Bytes() []byte                    { return h[:] }
+func (h Hex) IsZero() bool                     { return len(h) == 0 }
 func (h Hex) MarshalText() ([]byte, error)     { return byteSlice(h).MarshalText() }
 func (h Hex) ID() uint64                       { return byteSlice(h).ID() }
 func (h Hex) MarshalJSON() ([]byte, error)     { return byteSlice(h).MarshalJSON() }
@@ -335,6 +359,7 @@ func NewHash(input string) (Hash, error) {
 func (h Hash) String() string                   { return byteSlice(h).String() }
 func (h Hash) Pretty() string                   { return byteSlice(h).Pretty() }
 func (h Hash) Bytes() []byte                    { return h[:] }
+func (h Hash) IsZero() bool                     { return len(h) == 0 }
 func (h Hash) MarshalText() ([]byte, error)     { return byteSlice(h).MarshalText() }
 func (h Hash) ID() uint64                       { return byteSlice(h).ID() }
 func (h Hash) MarshalJSON() ([]byte, error)     { return byteSlice(h).MarshalJSON() }
@@ -406,6 +431,7 @@ func NewAddressLoose(input string) (Address, error) {
 func (a Address) String() string                   { return byteSlice(a).String() }
 func (a Address) Pretty() string                   { return byteSlice(a).Pretty() }
 func (a Address) Bytes() []byte                    { return a[:] }
+func (a Address) IsZero() bool                     { return len(a) == 0 }
 func (a Address) MarshalText() ([]byte, error)     { return byteSlice(a).MarshalText() }
 func (a Address) ID() uint64                       { return byteSlice(a).ID() }
 func (a Address) MarshalJSON() ([]byte, error)     { return byteSlice(a).MarshalJSON() }
@@ -439,6 +465,10 @@ func (b byteSlice) String() string {
 
 func (b byteSlice) Pretty() string {
 	return "0x" + hex.EncodeToString(b)
+}
+
+func (b byteSlice) IsZero() bool {
+	return len(b) == 0
 }
 
 func (b byteSlice) Bytes() []byte {
