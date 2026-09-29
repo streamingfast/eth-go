@@ -175,6 +175,51 @@ func TestDecodeBlockWith0prefixedTrx(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestDecodeBlockWithSlotNumber(t *testing.T) {
+	var block *Block
+	err := json.Unmarshal([]byte(`{"slotNumber":"0x2a"}`), &block)
+	require.NoError(t, err)
+
+	require.NotNil(t, block.SlotNumber)
+	assert.Equal(t, eth.Uint64(42), *block.SlotNumber)
+}
+
+func TestDecodeTransactionWithBlobFields(t *testing.T) {
+	var tx *Transaction
+	err := json.Unmarshal([]byte(`{
+  "maxFeePerBlobGas": "0x64",
+  "blobVersionedHashes": [
+    "0x01554cd99ddae8a88eb0ed71aaa2a8bb6450694211018b826be2d6bdaf12c48a"
+  ]
+}`), &tx)
+	require.NoError(t, err)
+
+	wantMaxFeePerBlobGas := &eth.Uint256{}
+	require.NoError(t, wantMaxFeePerBlobGas.UnmarshalText([]byte("0x64")))
+
+	require.NotNil(t, tx.MaxFeePerBlobGas)
+	assert.Equal(t, wantMaxFeePerBlobGas, tx.MaxFeePerBlobGas)
+	require.Len(t, tx.BlobVersionedHashes, 1)
+	assert.Equal(t, eth.MustNewHash("0x01554cd99ddae8a88eb0ed71aaa2a8bb6450694211018b826be2d6bdaf12c48a"), tx.BlobVersionedHashes[0])
+}
+
+func TestDecodeTransactionReceiptWithBlobFields(t *testing.T) {
+	var receipt *TransactionReceipt
+	err := json.Unmarshal([]byte(`{
+  "blobGasUsed": "0x20000",
+  "blobGasPrice": "0x1"
+}`), &receipt)
+	require.NoError(t, err)
+
+	wantBlobGasPrice := &eth.Uint256{}
+	require.NoError(t, wantBlobGasPrice.UnmarshalText([]byte("0x1")))
+
+	require.NotNil(t, receipt.BlobGasUsed)
+	assert.Equal(t, eth.Uint64(0x20000), *receipt.BlobGasUsed)
+	require.NotNil(t, receipt.BlobGasPrice)
+	assert.Equal(t, wantBlobGasPrice, receipt.BlobGasPrice)
+}
+
 type mockJSONRPCServer struct {
 	*httptest.Server
 	body []byte

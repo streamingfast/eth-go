@@ -341,6 +341,11 @@ type TransactionReceipt struct {
 	Root eth.Hash `json:"root"`
 	// Status is either 1 (success) or 0 (failure) (post Byzantium)
 	Status *eth.Uint64 `json:"status"`
+
+	// BlobGasUsed is the amount of blob gas used by this specific transaction alone (EIP-4844).
+	BlobGasUsed *eth.Uint64 `json:"blobGasUsed,omitzero,omitempty"`
+	// BlobGasPrice is the actual value per gas deducted from the sender's account for blob gas (EIP-4844).
+	BlobGasPrice *eth.Uint256 `json:"blobGasPrice,omitzero,omitempty"`
 }
 
 // Transaction retrieve from `eth_getBlockByXXX` methods.
@@ -398,6 +403,12 @@ type Transaction struct {
 	// MaxPriorityFeePerGas is the identifier chain the transaction was executed in, none if London fork is **not** activated
 	MaxPriorityFeePerGas *eth.Uint256 `json:"maxPriorityFeePerGas,omitzero,omitempty"`
 
+	// MaxFeePerBlobGas is the max fee per blob gas the sender is willing to pay, set when transaction is of BlobTx type (0x03)
+	MaxFeePerBlobGas *eth.Uint256 `json:"maxFeePerBlobGas,omitzero,omitempty"`
+
+	// BlobVersionedHashes is the list of versioned hashes of the blobs attached to this transaction, set when transaction is of BlobTx type (0x03)
+	BlobVersionedHashes []eth.Hash `json:"blobVersionedHashes,omitzero,omitempty"`
+
 	// Type is the transaction's type
 	Type eth.TransactionType `json:"type"`
 }
@@ -438,6 +449,7 @@ type Block struct {
 	WithdrawalsHash       *eth.Hash    `json:"withdrawalsRoot,omitzero,omitempty"`       // EIP-4895
 	Withdrawals           []Withdrawal `json:"withdrawals,omitzero,omitempty"`           // EIP-4895
 	RequestsHash          *eth.Hash    `json:"requestsHash,omitzero,omitempty"`          // EIP-7685
+	SlotNumber            *eth.Uint64  `json:"slotNumber,omitzero,omitempty"`            // EIP-7843
 }
 
 type Withdrawal struct {
