@@ -184,6 +184,65 @@ func TestDecodeBlockWithSlotNumber(t *testing.T) {
 	assert.Equal(t, eth.Uint64(42), *block.SlotNumber)
 }
 
+func TestDecodeBlockWithBlockAccessListHash(t *testing.T) {
+	var block *Block
+	err := json.Unmarshal([]byte(`{"blockAccessListHash":"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"}`), &block)
+	require.NoError(t, err)
+
+	require.NotNil(t, block.BlockAccessListHash)
+	assert.Equal(t, eth.MustNewHash("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"), *block.BlockAccessListHash)
+}
+
+func TestDecodeBlockAccessList(t *testing.T) {
+	var list BlockAccessList
+	err := json.Unmarshal([]byte(`[
+  {
+    "address": "0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b",
+    "storageChanges": [
+      {
+        "key": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "changes": [
+          {"index": "0x0", "value": "0x0000000000000000000000000000000000000000000000000000000000000000"},
+          {"index": "0x1", "value": "0x0000000000000000000000000000000000000000000000000000000000000100"}
+        ]
+      }
+    ],
+    "storageReads": [],
+    "balanceChanges": [
+      {"index": "0x0", "value": "0x56bc75e2d63100000"},
+      {"index": "0x1", "value": "0x56bc75e2d63000000"}
+    ],
+    "nonceChanges": [
+      {"index": "0x0", "value": "0x0"},
+      {"index": "0x1", "value": "0x1"}
+    ],
+    "codeChanges": []
+  }
+]`), &list)
+	require.NoError(t, err)
+
+	require.Len(t, list, 1)
+	account := list[0]
+	assert.Equal(t, eth.MustNewAddressLoose("0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b"), account.Address)
+
+	require.Len(t, account.StorageChanges, 1)
+	assert.Equal(t, eth.MustNewHash("0x0000000000000000000000000000000000000000000000000000000000000000"), account.StorageChanges[0].Key)
+	require.Len(t, account.StorageChanges[0].Changes, 2)
+	assert.Equal(t, eth.Uint64(1), account.StorageChanges[0].Changes[1].Index)
+
+	assert.Empty(t, account.StorageReads)
+
+	require.Len(t, account.BalanceChanges, 2)
+	wantBalance := &eth.Uint256{}
+	require.NoError(t, wantBalance.UnmarshalText([]byte("0x56bc75e2d63100000")))
+	assert.Equal(t, wantBalance, account.BalanceChanges[0].Value)
+
+	require.Len(t, account.NonceChanges, 2)
+	assert.Equal(t, eth.Uint64(1), account.NonceChanges[1].Value)
+
+	assert.Empty(t, account.CodeChanges)
+}
+
 func TestDecodeTransactionWithBlobFields(t *testing.T) {
 	var tx *Transaction
 	err := json.Unmarshal([]byte(`{

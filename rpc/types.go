@@ -449,6 +449,7 @@ type Block struct {
 	WithdrawalsHash       *eth.Hash    `json:"withdrawalsRoot,omitzero,omitempty"`       // EIP-4895
 	Withdrawals           []Withdrawal `json:"withdrawals,omitzero,omitempty"`           // EIP-4895
 	RequestsHash          *eth.Hash    `json:"requestsHash,omitzero,omitempty"`          // EIP-7685
+	BlockAccessListHash   *eth.Hash    `json:"blockAccessListHash,omitzero,omitempty"`   // EIP-7928
 	SlotNumber            *eth.Uint64  `json:"slotNumber,omitzero,omitempty"`            // EIP-7843
 }
 
@@ -457,6 +458,48 @@ type Withdrawal struct {
 	Validator eth.Uint64  `json:"validatorIndex"` // index of validator associated with withdrawal
 	Address   eth.Address `json:"address"`        // target address for withdrawn ether
 	Amount    eth.Uint64  `json:"amount"`         // value of withdrawal in Gwei
+}
+
+// BlockAccessList is the EIP-7928 block-level access list, returned by `eth_getBlockAccessList`.
+// It lists, per account touched in the block, every storage/balance/nonce/code change and every
+// storage slot read, ordered as per the canonical RLP encoding.
+type BlockAccessList []AccountAccess
+
+type AccountAccess struct {
+	Address        eth.Address     `json:"address"`
+	StorageChanges []SlotChanges   `json:"storageChanges"`
+	StorageReads   []eth.Hash      `json:"storageReads"`
+	BalanceChanges []BalanceChange `json:"balanceChanges"`
+	NonceChanges   []NonceChange   `json:"nonceChanges"`
+	CodeChanges    []CodeChange    `json:"codeChanges"`
+}
+
+type SlotChanges struct {
+	Key     eth.Hash        `json:"key"`
+	Changes []StorageChange `json:"changes"`
+}
+
+// StorageChange, BalanceChange, NonceChange and CodeChange's Index is the position, within the block,
+// of the transaction that caused the change (`eth.Uint64` here, `uint32` on the wire).
+
+type StorageChange struct {
+	Index eth.Uint64 `json:"index"`
+	Value eth.Hash   `json:"value"`
+}
+
+type BalanceChange struct {
+	Index eth.Uint64   `json:"index"`
+	Value *eth.Uint256 `json:"value"`
+}
+
+type NonceChange struct {
+	Index eth.Uint64 `json:"index"`
+	Value eth.Uint64 `json:"value"`
+}
+
+type CodeChange struct {
+	Index eth.Uint64 `json:"index"`
+	Code  eth.Hex    `json:"code"`
 }
 
 // BlockTransactions is a dynamic types and can be either a list of transactions hashes,
