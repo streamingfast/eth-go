@@ -26,6 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `rpc.Block` gained `BlockAccessListHash` (EIP-7928, part of the Amsterdam fork). Added the `rpc.BlockAccessList` type, modelling the full EIP-7928 block-level access list, and `rpc.Client.BlockAccessList` to fetch it via `eth_getBlockAccessList`.
 
+- `rpc.Transaction` gained `AuthorizationList` (EIP-7702 set-code transactions, type `0x04`), previously silently dropped when decoding `eth_getBlockByNumber`/`eth_getTransactionByHash` responses. Added the `rpc.AuthorizationList` and `rpc.SetCodeAuthorization` types, the latter gaining an `Authority()` method that recovers the signing address from the tuple's `r`/`s`/`yParity` per the EIP-7702 signing scheme.
+
 ### Changed
 
 - **Breaking** The minimum Go version is now 1.27, required by `encoding/json/v2`.

@@ -409,6 +409,9 @@ type Transaction struct {
 	// BlobVersionedHashes is the list of versioned hashes of the blobs attached to this transaction, set when transaction is of BlobTx type (0x03)
 	BlobVersionedHashes []eth.Hash `json:"blobVersionedHashes,omitzero,omitempty"`
 
+	// AuthorizationList is the list of EIP-7702 set-code authorization tuples attached to this transaction, set when transaction is of SetCodeTx type (0x04)
+	AuthorizationList AuthorizationList `json:"authorizationList,omitzero,omitempty"`
+
 	// Type is the transaction's type
 	Type eth.TransactionType `json:"type"`
 }
@@ -418,6 +421,22 @@ type AccessList []AccessTuple
 type AccessTuple struct {
 	Address     eth.Address `json:"address"`
 	StorageKeys []eth.Hash  `json:"storageKeys"`
+}
+
+// AuthorizationList is the list of EIP-7702 set-code authorization tuples attached to a
+// SetCodeTx (type 0x04) transaction.
+type AuthorizationList []SetCodeAuthorization
+
+// SetCodeAuthorization is a single EIP-7702 set-code authorization tuple as returned by
+// `eth_getTransactionByHash`/`eth_getBlockByXXX`. It does not carry the recovered `authority`
+// address nor a validity flag, those are computed, see [SetCodeAuthorization.Authority].
+type SetCodeAuthorization struct {
+	ChainID eth.Uint64   `json:"chainId"`
+	Address eth.Address  `json:"address"`
+	Nonce   eth.Uint64   `json:"nonce"`
+	YParity eth.Uint64   `json:"yParity"`
+	R       *eth.Uint256 `json:"r"`
+	S       *eth.Uint256 `json:"s"`
 }
 
 type Block struct {
