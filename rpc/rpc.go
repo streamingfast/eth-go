@@ -390,6 +390,13 @@ func (c *Client) BlockReceipts(ctx context.Context, blockRef *BlockRef) ([]*Tran
 	return Do[[]*TransactionReceipt](c, ctx, "eth_getBlockReceipts", []interface{}{blockRef})
 }
 
+// BlockAccessList fetches the EIP-7928 block access list for a given block using `eth_getBlockAccessList`.
+// Returns an error for blocks that predate the Amsterdam fork, or if the node does not support the method.
+func (c *Client) BlockAccessList(ctx context.Context, blockRef *BlockRef) (BlockAccessList, error) {
+	blockRef.shortBlockNumberNotation = true // this does not support long `{"blockNumber": 1234}` format
+	return Do[BlockAccessList](c, ctx, "eth_getBlockAccessList", []interface{}{blockRef})
+}
+
 func (c *Client) GetTransactionCount(ctx context.Context, accountAddr eth.Address, at *BlockRef) (uint64, error) {
 	return c.Nonce(ctx, accountAddr, at)
 }

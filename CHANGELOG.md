@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added `rpc.ErrResponse` constructors so a JSON-RPC server can build errors without assembling a struct literal, the message being formatted according to `fmt.Sprintf` rules: `rpc.NewErrResponse(code, format, args...)`, `rpc.NewParseError`, `rpc.NewInvalidRequestError`, `rpc.NewMethodNotFoundError`, `rpc.NewInvalidParamsError`, `rpc.NewInternalError` and `rpc.NewServerError`.
 
+- `rpc.Block` gained `SlotNumber` (EIP-7843), and `rpc.Transaction` gained `MaxFeePerBlobGas` and `BlobVersionedHashes` (EIP-4844 blob transactions). `rpc.TransactionReceipt` gained `BlobGasUsed` and `BlobGasPrice`. These fields were previously silently dropped when decoding `eth_getBlockByNumber`/`eth_getTransactionReceipt` responses.
+
+- `rpc.Block` gained `BlockAccessListHash` (EIP-7928, part of the Amsterdam fork). Added the `rpc.BlockAccessList` type, modelling the full EIP-7928 block-level access list, and `rpc.Client.BlockAccessList` to fetch it via `eth_getBlockAccessList`.
+
 ### Changed
 
 - **Breaking** The minimum Go version is now 1.27, required by `encoding/json/v2`.
