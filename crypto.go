@@ -15,6 +15,7 @@
 package eth
 
 import (
+	"crypto/ecdsa"
 	"crypto/elliptic"
 	"encoding/hex"
 	"encoding/json"
@@ -24,7 +25,7 @@ import (
 	"strconv"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	btcecdsa "github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"golang.org/x/crypto/sha3"
 )
@@ -84,6 +85,40 @@ func privateKeyFromRawBytes(privateKeyBytes []byte) (*PrivateKey, error) {
 	return &PrivateKey{inner: (*secp256k1.PrivateKey)(privKey)}, nil
 }
 
+// NewPrivateKeyFromECDSA creates a PrivateKey from standard library ecdsa.PrivateKey
+// This allows using existing ecdsa keys with eth-go signing functions.
+//
+// Example:
+//
+//	ecdsaKey, _ := ecdsa.GenerateKey(btcec.S256(), rand.Reader)
+//	ethKey := eth.NewPrivateKeyFromECDSA(ecdsaKey)
+//	sig, _ := ethKey.Sign(messageHash)
+func NewPrivateKeyFromECDSA(key *ecdsa.PrivateKey) (*PrivateKey, error) {
+	if key == nil {
+		return nil, fmt.Errorf("ecdsa private key is nil")
+	}
+
+	// Validate curve is secp256k1
+	if key.Curve != btcec.S256() {
+		return nil, fmt.Errorf("only secp256k1 curve is supported")
+	}
+
+	// Convert D to 32-byte representation
+	privKeyBytes := key.D.Bytes()
+	if len(privKeyBytes) > 32 {
+		return nil, fmt.Errorf("invalid private key: too many bytes")
+	}
+
+	// Pad to 32 bytes if needed (big-endian)
+	if len(privKeyBytes) < 32 {
+		padded := make([]byte, 32)
+		copy(padded[32-len(privKeyBytes):], privKeyBytes)
+		privKeyBytes = padded
+	}
+
+	return privateKeyFromRawBytes(privKeyBytes)
+}
+
 func (p *PrivateKey) String() string {
 	return hex.EncodeToString(p.Bytes())
 }
@@ -97,7 +132,7 @@ func (p *PrivateKey) Bytes() (out []byte) {
 //
 // See Signature documentation for more info about return signature format.
 func (p *PrivateKey) Sign(messageHash Hash) (out Signature, err error) {
-	compressedSignature := ecdsa.SignCompact(p.inner, messageHash, false)
+	compressedSignature := btcecdsa.SignCompact(p.inner, messageHash, false)
 
 	copy(out[:], compressedSignature)
 	return out, nil
@@ -150,6 +185,25 @@ func (p *PrivateKey) PublicKey() *PublicKey {
 	return &PublicKey{inner: p.inner.PubKey()}
 }
 
+// ToECDSA converts this PrivateKey to a standard library ecdsa.PrivateKey
+// This allows using eth-go keys with standard crypto/ecdsa functions.
+//
+// Example:
+//
+//	ethKey, _ := eth.NewRandomPrivateKey()
+//	ecdsaKey := ethKey.ToECDSA()
+//	// Use with standard library functions
+func (p *PrivateKey) ToECDSA() *ecdsa.PrivateKey {
+	return &ecdsa.PrivateKey{
+		PublicKey: ecdsa.PublicKey{
+			Curve: btcec.S256(),
+			X:     p.inner.PubKey().X(),
+			Y:     p.inner.PubKey().Y(),
+		},
+		D: new(big.Int).SetBytes(p.inner.Serialize()),
+	}
+}
+
 // Signature represents a btcec Signature as computed from ecdsa.SignCompact(), this signature
 // is in packed form of 65 bytes with ordered V (1 byte) + R (32 bytes) + S (32 bytes).
 //
@@ -163,6 +217,29 @@ func NewSignatureFromBytes(in []byte) (out Signature, err error) {
 
 	copy(out[:], in[0:65])
 	return
+}
+
+// NewSignatureFromComponents creates a Signature from V, R, S components.
+// This is useful when signature components are stored separately and need
+// to be reconstructed for recovery.
+//
+// Signature format: [V (1 byte)][R (32 bytes)][S (32 bytes)]
+//
+// Example:
+//
+//	// Components from storage/protobuf/etc
+//	v := byte(0)
+//	r := [32]byte{...}
+//	s := [32]byte{...}
+//
+//	sig := eth.NewSignatureFromComponents(v, r, s)
+//	address, err := sig.Recover(messageHash)
+func NewSignatureFromComponents(v byte, r, s [32]byte) Signature {
+	var sig Signature
+	sig[0] = v
+	copy(sig[1:33], r[:])
+	copy(sig[33:65], s[:])
+	return sig
 }
 
 // ToInverted returns the InvertedSignature version of this Signature, this is
@@ -195,8 +272,34 @@ func (s Signature) V() byte {
 	return byte(s[0])
 }
 
+// RBytes returns the R component of the signature as a 32-byte array.
+// Signature format is [V (1 byte)][R (32 bytes)][S (32 bytes)]
+//
+// Example:
+//
+//	sig, _ := privateKey.Sign(messageHash)
+//	r := sig.RBytes()  // Extract R component as bytes
+func (s Signature) RBytes() [32]byte {
+	var r [32]byte
+	copy(r[:], s[1:33])
+	return r
+}
+
+// SBytes returns the S component of the signature as a 32-byte array.
+// Signature format is [V (1 byte)][R (32 bytes)][S (32 bytes)]
+//
+// Example:
+//
+//	sig, _ := privateKey.Sign(messageHash)
+//	sVal := sig.SBytes()  // Extract S component as bytes
+func (s Signature) SBytes() [32]byte {
+	var sVal [32]byte
+	copy(sVal[:], s[33:65])
+	return sVal
+}
+
 func (s Signature) Recover(messageHash Hash) (Address, error) {
-	publicKey, compressed, err := ecdsa.RecoverCompact(s[:], messageHash)
+	publicKey, compressed, err := btcecdsa.RecoverCompact(s[:], messageHash)
 	if err != nil {
 		return nil, fmt.Errorf("ecdsa recover compact: %w", err)
 	}

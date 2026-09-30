@@ -15,11 +15,15 @@
 package eth
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -484,4 +488,167 @@ func TestSignature_RecoverPersonal(t *testing.T) {
 			assert.Equal(t, tt.want, got.Pretty())
 		})
 	}
+}
+
+func TestNewPrivateKeyFromECDSA(t *testing.T) {
+	// Use a known private key to ensure consistent results
+	// Private key: 52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee674
+	// Expected address: 821b55d8abe79bc98f05eb675fdc50dfe796b7ab
+	knownPrivKey, err := NewPrivateKey("52e1cc4b9c8b4fc9b202adf06462bdcc248e170c9abd56b2adb84c8d87bee674")
+	require.NoError(t, err)
+	expectedAddr := knownPrivKey.PublicKey().Address()
+
+	// Convert to standard library ECDSA key
+	ecdsaKey := knownPrivKey.ToECDSA()
+
+	// Convert back to eth.PrivateKey
+	ethKey, err := NewPrivateKeyFromECDSA(ecdsaKey)
+	require.NoError(t, err)
+	require.NotNil(t, ethKey)
+
+	// Verify addresses match
+	ethAddr := ethKey.PublicKey().Address()
+	require.Equal(t, expectedAddr, ethAddr)
+
+	// Verify signatures work correctly
+	messageHash := Keccak256([]byte("test message"))
+
+	ethSig, err := ethKey.Sign(messageHash)
+	require.NoError(t, err)
+
+	// Recover and verify address matches
+	recoveredAddr, err := ethSig.Recover(messageHash)
+	require.NoError(t, err)
+	require.Equal(t, ethAddr, recoveredAddr)
+}
+
+func TestPrivateKeyToECDSA(t *testing.T) {
+	// Use a known private key to ensure consistent results
+	// Private key: 2f6e6a9af650c60e4b2c6a0a1b440cec202182bed3fc15bc5b8eec1132b2d6ad
+	// Expected address: 403a09cd493e41d381ebff4ffb01de4c9f2ff1dc
+	ethKey, err := NewPrivateKey("2f6e6a9af650c60e4b2c6a0a1b440cec202182bed3fc15bc5b8eec1132b2d6ad")
+	require.NoError(t, err)
+	expectedAddr := "403a09cd493e41d381ebff4ffb01de4c9f2ff1dc"
+
+	// Convert to ecdsa.PrivateKey
+	ecdsaKey := ethKey.ToECDSA()
+	require.NotNil(t, ecdsaKey)
+
+	// Verify curve is secp256k1
+	require.Equal(t, btcec.S256(), ecdsaKey.Curve)
+
+	// Convert back to eth.PrivateKey and verify address matches
+	ethKey2, err := NewPrivateKeyFromECDSA(ecdsaKey)
+	require.NoError(t, err)
+	require.Equal(t, expectedAddr, ethKey2.PublicKey().Address().String())
+
+	// Verify original address still matches
+	require.Equal(t, expectedAddr, ethKey.PublicKey().Address().String())
+}
+
+func TestSignatureComponents(t *testing.T) {
+	key, err := NewRandomPrivateKey()
+	require.NoError(t, err)
+
+	messageHash := Keccak256([]byte("test message"))
+
+	// Sign message
+	sig, err := key.Sign(messageHash)
+	require.NoError(t, err)
+
+	// Extract components
+	v := sig.V()
+	r := sig.RBytes()
+	s := sig.SBytes()
+
+	// Verify V is valid recovery ID
+	require.True(t, v == 0 || v == 1 || v == 27 || v == 28)
+
+	// Verify R and S are non-zero
+	require.NotEqual(t, [32]byte{}, r, "R should not be zero")
+	require.NotEqual(t, [32]byte{}, s, "S should not be zero")
+
+	// Verify existing big.Int methods still work
+	rBig := sig.R()
+	sBig := sig.S()
+	require.NotNil(t, rBig)
+	require.NotNil(t, sBig)
+	require.Equal(t, r[:], rBig.Bytes())
+	require.Equal(t, s[:], sBig.Bytes())
+}
+
+func TestNewSignatureFromComponents(t *testing.T) {
+	// Create signature
+	key, err := NewRandomPrivateKey()
+	require.NoError(t, err)
+
+	messageHash := Keccak256([]byte("test message"))
+
+	originalSig, err := key.Sign(messageHash)
+	require.NoError(t, err)
+
+	// Extract components
+	v := originalSig.V()
+	r := originalSig.RBytes()
+	s := originalSig.SBytes()
+
+	// Reconstruct signature
+	reconstructedSig := NewSignatureFromComponents(v, r, s)
+
+	// Verify signatures are identical
+	require.Equal(t, originalSig, reconstructedSig)
+
+	// Verify recovery works
+	addr1, err := originalSig.Recover(messageHash)
+	require.NoError(t, err)
+
+	addr2, err := reconstructedSig.Recover(messageHash)
+	require.NoError(t, err)
+
+	require.Equal(t, addr1, addr2)
+	require.Equal(t, key.PublicKey().Address(), addr1)
+}
+
+func TestNewSignatureFromComponentsManual(t *testing.T) {
+	// Test with known signature components
+	v := byte(0)
+	r := [32]byte{
+		0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+		0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+		0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+		0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+	}
+	s := [32]byte{
+		0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89,
+		0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89,
+		0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89,
+		0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89,
+	}
+
+	sig := NewSignatureFromComponents(v, r, s)
+
+	// Verify format: [V][R][S]
+	require.Equal(t, v, sig[0])
+	require.Equal(t, r[:], sig[1:33])
+	require.Equal(t, s[:], sig[33:65])
+
+	// Verify extraction roundtrip
+	require.Equal(t, v, sig.V())
+	require.Equal(t, r, sig.RBytes())
+	require.Equal(t, s, sig.SBytes())
+}
+
+func TestNewPrivateKeyFromECDSAErrors(t *testing.T) {
+	// Nil key
+	_, err := NewPrivateKeyFromECDSA(nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil")
+
+	// Wrong curve (P256 instead of secp256k1)
+	wrongKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	_, err = NewPrivateKeyFromECDSA(wrongKey)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "secp256k1")
 }

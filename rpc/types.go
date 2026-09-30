@@ -321,7 +321,7 @@ type TransactionReceipt struct {
 	// From is the address of the sender.
 	From eth.Address `json:"from"`
 	// To is the address of the receiver, `null` when the transaction is a contract creation transaction.
-	To *eth.Address `json:"to,omitempty"`
+	To *eth.Address `json:"to,omitzero,omitempty"`
 	// CumulativeGasUsed is the the total amount of gas used when this transaction was executed in the block.
 	CumulativeGasUsed eth.Uint64 `json:"cumulativeGasUsed"`
 	// EffectiveGasPrice is the sum of the base fee and tip paid per unit of gas.
@@ -329,7 +329,7 @@ type TransactionReceipt struct {
 	// GasUsed is the the amount of gas used by this specific transaction alone.
 	GasUsed eth.Uint64 `json:"gasUsed"`
 	// ContractAddress is the the contract address created, if the transaction was a contract creation, otherwise - null.
-	ContractAddress *eth.Address `json:"contractAddress,omitempty"`
+	ContractAddress *eth.Address `json:"contractAddress,omitzero,omitempty"`
 	// Logs is the Array of log objects, which this transaction generated.
 	Logs []*LogEntry `json:"logs"`
 	// LogsBloom is the Bloom filter for light clients to quickly retrieve related logs.
@@ -341,6 +341,11 @@ type TransactionReceipt struct {
 	Root eth.Hash `json:"root"`
 	// Status is either 1 (success) or 0 (failure) (post Byzantium)
 	Status *eth.Uint64 `json:"status"`
+
+	// BlobGasUsed is the amount of blob gas used by this specific transaction alone (EIP-4844).
+	BlobGasUsed *eth.Uint64 `json:"blobGasUsed,omitzero,omitempty"`
+	// BlobGasPrice is the actual value per gas deducted from the sender's account for blob gas (EIP-4844).
+	BlobGasPrice *eth.Uint256 `json:"blobGasPrice,omitzero,omitempty"`
 }
 
 // Transaction retrieve from `eth_getBlockByXXX` methods.
@@ -348,7 +353,7 @@ type Transaction struct {
 	// Hash is the hash of the transaction.
 	Hash eth.Hash `json:"hash"`
 
-	Nonce eth.Uint64 `json:"nonce,omitempty"`
+	Nonce eth.Uint64 `json:"nonce,omitzero,omitempty"`
 
 	// BlockHash is the hash of the block where this transaction was in, none when pending.
 	BlockHash eth.Hash `json:"blockHash"`
@@ -375,28 +380,37 @@ type Transaction struct {
 	Gas eth.Uint64 `json:"gas"`
 
 	// Input data the transaction will receive for execution of EVM.
-	Input eth.Hex `json:"input,omitempty"`
+	Input eth.Hex `json:"input,omitzero,omitempty"`
 
 	// V is the ECDSA recovery id of the transaction's signature.
-	V eth.Uint64 `json:"v,omitempty"`
+	V eth.Uint64 `json:"v,omitzero,omitempty"`
 
 	// R is the ECDSA signature R point of transaction's signature.
-	R *eth.Uint256 `json:"r,omitempty"`
+	R *eth.Uint256 `json:"r,omitzero,omitempty"`
 
 	// S is the ECDSA signature S point of transaction's signature.
-	S *eth.Uint256 `json:"s,omitempty"`
+	S *eth.Uint256 `json:"s,omitzero,omitempty"`
 
 	// AccessList is the defined access list tuples when the transaction is of AccessList type (0x01), none when transaction of other types.
-	AccessList AccessList `json:"accessList,omitempty"`
+	AccessList AccessList `json:"accessList,omitzero,omitempty"`
 
 	// ChainID is the identifier chain the transaction was executed in, none if London fork is **not** activated
-	ChainID eth.Uint64 `json:"chainId,omitempty"`
+	ChainID eth.Uint64 `json:"chainId,omitzero,omitempty"`
 
 	// MaxFeePerGas is the identifier chain the transaction was executed in, none if London fork is **not** activated
-	MaxFeePerGas *eth.Uint256 `json:"maxFeePerGas,omitempty"`
+	MaxFeePerGas *eth.Uint256 `json:"maxFeePerGas,omitzero,omitempty"`
 
 	// MaxPriorityFeePerGas is the identifier chain the transaction was executed in, none if London fork is **not** activated
-	MaxPriorityFeePerGas *eth.Uint256 `json:"maxPriorityFeePerGas,omitempty"`
+	MaxPriorityFeePerGas *eth.Uint256 `json:"maxPriorityFeePerGas,omitzero,omitempty"`
+
+	// MaxFeePerBlobGas is the max fee per blob gas the sender is willing to pay, set when transaction is of BlobTx type (0x03)
+	MaxFeePerBlobGas *eth.Uint256 `json:"maxFeePerBlobGas,omitzero,omitempty"`
+
+	// BlobVersionedHashes is the list of versioned hashes of the blobs attached to this transaction, set when transaction is of BlobTx type (0x03)
+	BlobVersionedHashes []eth.Hash `json:"blobVersionedHashes,omitzero,omitempty"`
+
+	// AuthorizationList is the list of EIP-7702 set-code authorization tuples attached to this transaction, set when transaction is of SetCodeTx type (0x04)
+	AuthorizationList AuthorizationList `json:"authorizationList,omitzero,omitempty"`
 
 	// Type is the transaction's type
 	Type eth.TransactionType `json:"type"`
@@ -407,6 +421,22 @@ type AccessList []AccessTuple
 type AccessTuple struct {
 	Address     eth.Address `json:"address"`
 	StorageKeys []eth.Hash  `json:"storageKeys"`
+}
+
+// AuthorizationList is the list of EIP-7702 set-code authorization tuples attached to a
+// SetCodeTx (type 0x04) transaction.
+type AuthorizationList []SetCodeAuthorization
+
+// SetCodeAuthorization is a single EIP-7702 set-code authorization tuple as returned by
+// `eth_getTransactionByHash`/`eth_getBlockByXXX`. It does not carry the recovered `authority`
+// address nor a validity flag, those are computed, see [SetCodeAuthorization.Authority].
+type SetCodeAuthorization struct {
+	ChainID eth.Uint64   `json:"chainId"`
+	Address eth.Address  `json:"address"`
+	Nonce   eth.Uint64   `json:"nonce"`
+	YParity eth.Uint64   `json:"yParity"`
+	R       *eth.Uint256 `json:"r"`
+	S       *eth.Uint256 `json:"s"`
 }
 
 type Block struct {
@@ -423,21 +453,23 @@ type Block struct {
 	Difficulty       *eth.Uint256       `json:"difficulty"`
 	TotalDifficulty  *eth.Uint256       `json:"totalDifficulty"`
 	Miner            eth.Address        `json:"miner"`
-	Nonce            eth.FixedUint64    `json:"nonce,omitempty"`
+	Nonce            eth.FixedUint64    `json:"nonce,omitzero,omitempty"`
 	LogsBloom        eth.Hex            `json:"logsBloom"`
 	ExtraData        eth.Hex            `json:"extraData"`
-	BaseFeePerGas    *eth.Uint256       `json:"baseFeePerGas,omitempty"`
-	BlockSize        eth.Uint64         `json:"size,omitempty"`
-	Transactions     *BlockTransactions `json:"transactions,omitempty"`
-	UnclesSHA3       eth.Hash           `json:"sha3Uncles,omitempty"`
-	Uncles           []eth.Hash         `json:"uncles,omitempty"`
+	BaseFeePerGas    *eth.Uint256       `json:"baseFeePerGas,omitzero,omitempty"`
+	BlockSize        eth.Uint64         `json:"size,omitzero,omitempty"`
+	Transactions     *BlockTransactions `json:"transactions,omitzero,omitempty"`
+	UnclesSHA3       eth.Hash           `json:"sha3Uncles,omitzero,omitempty"`
+	Uncles           []eth.Hash         `json:"uncles,omitzero,omitempty"`
 
-	BlobGasUsed           *eth.Uint64  `json:"blobGasUsed,omitempty"`           // EIP-4844
-	ExcessBlobGas         *eth.Uint64  `json:"excessBlobGas,omitempty"`         // EIP-4844
-	ParentBeaconBlockRoot *eth.Hash    `json:"parentBeaconBlockRoot,omitempty"` // EIP-4844
-	WithdrawalsHash       *eth.Hash    `json:"withdrawalsRoot,omitempty"`       // EIP-4895
-	Withdrawals           []Withdrawal `json:"withdrawals,omitempty"`           // EIP-4895
-	RequestsHash          *eth.Hash    `json:"requestsHash,omitempty"`          // EIP-7685
+	BlobGasUsed           *eth.Uint64  `json:"blobGasUsed,omitzero,omitempty"`           // EIP-4844
+	ExcessBlobGas         *eth.Uint64  `json:"excessBlobGas,omitzero,omitempty"`         // EIP-4844
+	ParentBeaconBlockRoot *eth.Hash    `json:"parentBeaconBlockRoot,omitzero,omitempty"` // EIP-4844
+	WithdrawalsHash       *eth.Hash    `json:"withdrawalsRoot,omitzero,omitempty"`       // EIP-4895
+	Withdrawals           []Withdrawal `json:"withdrawals,omitzero,omitempty"`           // EIP-4895
+	RequestsHash          *eth.Hash    `json:"requestsHash,omitzero,omitempty"`          // EIP-7685
+	BlockAccessListHash   *eth.Hash    `json:"blockAccessListHash,omitzero,omitempty"`   // EIP-7928
+	SlotNumber            *eth.Uint64  `json:"slotNumber,omitzero,omitempty"`            // EIP-7843
 }
 
 type Withdrawal struct {
@@ -445,6 +477,48 @@ type Withdrawal struct {
 	Validator eth.Uint64  `json:"validatorIndex"` // index of validator associated with withdrawal
 	Address   eth.Address `json:"address"`        // target address for withdrawn ether
 	Amount    eth.Uint64  `json:"amount"`         // value of withdrawal in Gwei
+}
+
+// BlockAccessList is the EIP-7928 block-level access list, returned by `eth_getBlockAccessList`.
+// It lists, per account touched in the block, every storage/balance/nonce/code change and every
+// storage slot read, ordered as per the canonical RLP encoding.
+type BlockAccessList []AccountAccess
+
+type AccountAccess struct {
+	Address        eth.Address     `json:"address"`
+	StorageChanges []SlotChanges   `json:"storageChanges"`
+	StorageReads   []eth.Hash      `json:"storageReads"`
+	BalanceChanges []BalanceChange `json:"balanceChanges"`
+	NonceChanges   []NonceChange   `json:"nonceChanges"`
+	CodeChanges    []CodeChange    `json:"codeChanges"`
+}
+
+type SlotChanges struct {
+	Key     eth.Hash        `json:"key"`
+	Changes []StorageChange `json:"changes"`
+}
+
+// StorageChange, BalanceChange, NonceChange and CodeChange's Index is the position, within the block,
+// of the transaction that caused the change (`eth.Uint64` here, `uint32` on the wire).
+
+type StorageChange struct {
+	Index eth.Uint64 `json:"index"`
+	Value eth.Hash   `json:"value"`
+}
+
+type BalanceChange struct {
+	Index eth.Uint64   `json:"index"`
+	Value *eth.Uint256 `json:"value"`
+}
+
+type NonceChange struct {
+	Index eth.Uint64 `json:"index"`
+	Value eth.Uint64 `json:"value"`
+}
+
+type CodeChange struct {
+	Index eth.Uint64 `json:"index"`
+	Code  eth.Hex    `json:"code"`
 }
 
 // BlockTransactions is a dynamic types and can be either a list of transactions hashes,
@@ -467,10 +541,10 @@ func (txs *BlockTransactions) MarshalJSON() ([]byte, error) {
 }
 
 func (txs *BlockTransactions) MarshalJSONRPC() ([]byte, error) {
-	return txs.marshalJSON(MarshalJSONRPC)
+	return txs.marshalJSON(func(v any) ([]byte, error) { return MarshalJSONRPC(v) })
 }
 
-func (txs *BlockTransactions) marshalJSON(marshaller func(v interface{}) ([]byte, error)) ([]byte, error) {
+func (txs *BlockTransactions) marshalJSON(marshaller func(v any) ([]byte, error)) ([]byte, error) {
 	if len(txs.hashes) == 0 {
 		if len(txs.Transactions) == 0 {
 			return []byte(`[]`), nil
