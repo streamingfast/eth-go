@@ -500,6 +500,35 @@ func TestLogs_EncodesShortBlockNumberNotation(t *testing.T) {
 	}
 }
 
+func TestLogs_BlockHashOnly(t *testing.T) {
+	server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":[]}`))
+	defer closer()
+
+	client := NewClient(server.URL)
+	_, err := client.Logs(context.Background(), LogsParams{
+		BlockHash: eth.MustNewBytes("0x2a3fd9f0a9b8cb8c4d0a0fce09a5cdbe28caf6e0e2e3bdc0b0b1a4d4f1c2e3d4"),
+	})
+	require.NoError(t, err)
+
+	paramsObj := server.RequestBody(t)["params"].([]interface{})[0].(map[string]interface{})
+	assert.NotContains(t, paramsObj, "fromBlock")
+	assert.NotContains(t, paramsObj, "toBlock")
+	assert.Equal(t, "0x2a3fd9f0a9b8cb8c4d0a0fce09a5cdbe28caf6e0e2e3bdc0b0b1a4d4f1c2e3d4", paramsObj["blockHash"])
+}
+
+func TestLogs_OnlyOneBlockBound(t *testing.T) {
+	server, closer := mockJSONRPC(t, json.RawMessage(`{"id":"0x1","result":[]}`))
+	defer closer()
+
+	client := NewClient(server.URL)
+	_, err := client.Logs(context.Background(), LogsParams{FromBlock: BlockNumber(5)})
+	require.NoError(t, err)
+
+	paramsObj := server.RequestBody(t)["params"].([]interface{})[0].(map[string]interface{})
+	assert.Equal(t, "0x5", paramsObj["fromBlock"])
+	assert.NotContains(t, paramsObj, "toBlock")
+}
+
 func TestCall_EncodesLongBlockNumberNotation(t *testing.T) {
 	// Test that eth_call and similar methods encode block refs in long EIP-1898 format
 	// when ETH_RPC_SHORT_BLOCK_NUMBER_NOTATION environment variable is not set and
