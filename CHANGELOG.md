@@ -62,6 +62,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed `Client.Logs` panicking with a nil pointer dereference when `FromBlock` or `ToBlock` is nil, which is always the case for a `BlockHash` query.
+
 - Fixed `eth.Int` rejecting any value outside the `int8` range when unmarshalled from text. It parsed with a bit size of 8 rather than the platform `int` size, so `0x1ff` failed with "value out of range".
 
 - Fixed the encoding of negative integers and `big.Int` values, which came out as `"0x-ff"` — a form no JSON-RPC node accepts and that no other implementation produces. They now use `"-0xff"`, the spelling `go-ethereum`'s `hexutil.EncodeBig` uses. `eth`'s integer parsing reads that form back, and still accepts the old one. Note that the JSON-RPC spec has no negative `QUANTITY` at all, so this only settles which form a caller passing a negative value gets.
