@@ -202,8 +202,14 @@ func OneOfTopic(topics ...interface{}) (out TopicFilterExpr) {
 }
 
 func (c *Client) Logs(ctx context.Context, params LogsParams) ([]*LogEntry, error) {
-	params.FromBlock.shortBlockNumberNotation = true // these do not support long `{"blockNumber": 1234}` format
-	params.ToBlock.shortBlockNumberNotation = true
+	// eth_getLogs does not support the long `{"blockNumber": 1234}` format. Both are
+	// optional, a BlockHash query sets neither.
+	if params.FromBlock != nil {
+		params.FromBlock.shortBlockNumberNotation = true
+	}
+	if params.ToBlock != nil {
+		params.ToBlock.shortBlockNumberNotation = true
+	}
 	return Do[[]*LogEntry](c, ctx, "eth_getLogs", []interface{}{params})
 }
 
