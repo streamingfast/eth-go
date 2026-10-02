@@ -62,6 +62,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Fixed `rpc.Client` leaking a connection for each response with an HTTP error status (`400` and above): the response body was never closed, so the connection was neither reused nor released.
+
 - Fixed `Client.Logs` panicking with a nil pointer dereference when `FromBlock` or `ToBlock` is nil, which is always the case for a `BlockHash` query.
 
 - Fixed `eth.Int` rejecting any value outside the `int8` range when unmarshalled from text. It parsed with a bit size of 8 rather than the platform `int` size, so `0x1ff` failed with "value out of range".

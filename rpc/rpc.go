@@ -698,10 +698,11 @@ func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []
 	if err != nil {
 		return nil, fmt.Errorf("sending request to json_rpc endpoint: %w", err)
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("error in response: %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {

@@ -19,8 +19,10 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/streamingfast/eth-go"
@@ -823,4 +825,32 @@ func TestBlockRef_ShortVsLongFormatComparison(t *testing.T) {
 		assert.Equal(t, `"0x1388"`, string(paramJSON),
 			"Call should use short format when environment variable is set")
 	})
+}
+
+func TestClient_ReusesConnectionAfterHTTPError(t *testing.T) {
+	var connections atomic.Int64
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(http.StatusTooManyRequests)
+		rw.Write([]byte(`{"error":"rate limited"}`))
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+
+	client := NewClient(server.URL)
+
+	const requests = 20
+	for i := 0; i < requests; i++ {
+		_, err := client.DoRequest(context.Background(), "eth_call", nil)
+		require.Error(t, err)
+	}
+
+	// The transport reads what is left of a closed body in the background, so a request can
+	// start before the previous connection is free again and the count is not always 1.
+	assert.Less(t, connections.Load(), int64(requests), "every failed request opened a connection of its own")
 }
