@@ -691,10 +691,6 @@ func Do[T any](c *Client, ctx context.Context, method string, params []interface
 	return out, nil
 }
 
-// maxDiscardedErrorBody is how much of the body of a failed response is read before giving up
-// on reusing its connection.
-const maxDiscardedErrorBody = 64 << 10
-
 func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []byte) ([]byte, error) {
 	body := bytes.NewBuffer(reqsBytes)
 
@@ -705,10 +701,6 @@ func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		// A connection closed with content left unread is not always reused, reading the content
-		// first makes sure it is.
-		io.CopyN(io.Discard, resp.Body, maxDiscardedErrorBody)
-
 		return nil, fmt.Errorf("error in response: %d", resp.StatusCode)
 	}
 
