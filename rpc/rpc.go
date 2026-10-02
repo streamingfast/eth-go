@@ -705,8 +705,8 @@ func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		// Closing a body that still has unread content drops the connection, reading it first
-		// lets the connection be reused.
+		// A connection closed with content left unread is not always reused, reading the content
+		// first makes sure it is.
 		io.CopyN(io.Discard, resp.Body, maxDiscardedErrorBody)
 
 		return nil, fmt.Errorf("error in response: %d", resp.StatusCode)
