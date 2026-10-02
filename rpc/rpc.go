@@ -691,6 +691,10 @@ func Do[T any](c *Client, ctx context.Context, method string, params []interface
 	return out, nil
 }
 
+// maxDiscardedErrorBody is how much of the body of a failed response is read before giving up
+// on reusing its connection.
+const maxDiscardedErrorBody = 64 << 10
+
 func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []byte) ([]byte, error) {
 	body := bytes.NewBuffer(reqsBytes)
 
@@ -698,10 +702,15 @@ func (c *Client) doRequest(ctx context.Context, logger *zap.Logger, reqsBytes []
 	if err != nil {
 		return nil, fmt.Errorf("sending request to json_rpc endpoint: %w", err)
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode >= 400 {
+		// Closing a body that still has unread content drops the connection, reading it first
+		// lets the connection be reused.
+		io.CopyN(io.Discard, resp.Body, maxDiscardedErrorBody)
+
 		return nil, fmt.Errorf("error in response: %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
